@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NetLens</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="pulse" id="pulse" title="Capture activity"></span>
+      <span class="brand-name">NetLens</span>
+      <span class="count" id="count">0</span>
+    </div>
+    <div class="controls">
+      <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture">⏸</button>
+      <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests">⌫</button>
+    </div>
+  </header>
+
+  <div class="filterbar">
+    <input id="filter" type="text" placeholder="Filter by URL or method…" autocomplete="off" spellcheck="false" />
+    <label class="errors-toggle">
+      <input type="checkbox" id="errorsOnly" />
+      <span>Errors only</span>
+    </label>
+    <label class="errors-toggle bodies-toggle" title="Also search request/response bodies (slower on large payloads)">
+      <input type="checkbox" id="bodySearch" />
+      <span>Search bodies</span>
+    </label>
+  </div>
+
+  <main id="list" class="list" aria-live="polite"></main>
+
+  <div id="empty" class="empty">
+    <p class="empty-title">No requests captured yet</p>
+    <p class="empty-hint">Reload the page to capture its load-time API calls. Chrome pages (chrome://, Web Store) can't be captured.</p>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
