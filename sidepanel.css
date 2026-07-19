@@ -419,5 +419,35 @@ body { display: flex; flex-direction: column; }
   vertical-align: top;
 }
 
-
-
+.session-decoded {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 12px;
+}
+.session-decoded details {
+  padding-left: 0;
+}
+.session-decoded summary {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--indigo);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.session-decoded summary::-webkit-details-marker {
+  display: none;
+}
+.session-decoded summary::before {
+  content: "▸ ";
+  color: var(--faint);
+  font-size: 10px;
+  margin-right: 4px;
+}
+.session-decoded details[open] > summary::before {
+  content: "▾ ";
+}
+.session-decoded-inner {
+  padding: 4px 0;
+}

@@ -43,6 +43,118 @@
     el.append(label, urlSpan, timeSpan);
   }
 
+  function addSessionDecodedIfAny(containerEl, url) {
+    const existing = containerEl.querySelector('.session-decoded');
+    if (existing) existing.remove();
+
+    try {
+      const u = new URL(url);
+      const decodedParams = [];
+      for (const [key, val] of u.searchParams.entries()) {
+        const decoded = tryDecodeStructure(val);
+        if (decoded) {
+          decodedParams.push({ key, method: decoded.method, value: decoded.value });
+        }
+      }
+      
+      const segments = u.pathname.split('/').filter(Boolean);
+      const decodedSegments = [];
+      for (let i = 0; i < segments.length; i++) {
+        const decoded = tryDecodeStructure(segments[i]);
+        if (decoded) {
+          decodedSegments.push({ key: `Path Segment [${i}]`, method: decoded.method, value: decoded.value });
+        }
+      }
+
+      if (decodedParams.length > 0 || decodedSegments.length > 0) {
+        const decDiv = document.createElement('div');
+        decDiv.className = 'session-decoded';
+        
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = '🔍 View Decoded URL Parameters';
+        details.appendChild(summary);
+
+        const inner = document.createElement('div');
+        inner.className = 'session-decoded-inner';
+        
+        if (decodedParams.length > 0) {
+          const title = document.createElement('div');
+          title.className = 'decoded-section-title';
+          title.textContent = 'Query Parameters';
+          inner.appendChild(title);
+          
+          const table = document.createElement('table');
+          table.className = 'kv decoded-table';
+          for (const item of decodedParams) {
+            const tr = document.createElement('tr');
+            const tdKey = document.createElement('td');
+            tdKey.className = 'decoded-key-cell';
+            tdKey.textContent = item.key;
+            
+            const tdVal = document.createElement('td');
+            tdVal.className = 'decoded-val-cell';
+            if (typeof item.value === 'object' && item.value !== null) {
+              const tree = document.createElement('div');
+              tree.className = 'jtree';
+              const root = jsonNode(null, item.value, true);
+              if (root.tagName === 'DETAILS') root.open = true;
+              tree.appendChild(root);
+              tdVal.appendChild(tree);
+            } else {
+              const pre = document.createElement('pre');
+              pre.className = 'raw';
+              pre.textContent = String(item.value);
+              tdVal.appendChild(pre);
+            }
+            tr.append(tdKey, tdVal);
+            table.appendChild(tr);
+          }
+          inner.appendChild(table);
+        }
+
+        if (decodedSegments.length > 0) {
+          const title = document.createElement('div');
+          title.className = 'decoded-section-title';
+          title.textContent = 'URL Path Segments';
+          inner.appendChild(title);
+          
+          const table = document.createElement('table');
+          table.className = 'kv decoded-table';
+          for (const item of decodedSegments) {
+            const tr = document.createElement('tr');
+            const tdKey = document.createElement('td');
+            tdKey.className = 'decoded-key-cell';
+            tdKey.textContent = item.key;
+            
+            const tdVal = document.createElement('td');
+            tdVal.className = 'decoded-val-cell';
+            if (typeof item.value === 'object' && item.value !== null) {
+              const tree = document.createElement('div');
+              tree.className = 'jtree';
+              const root = jsonNode(null, item.value, true);
+              if (root.tagName === 'DETAILS') root.open = true;
+              tree.appendChild(root);
+              tdVal.appendChild(tree);
+            } else {
+              const pre = document.createElement('pre');
+              pre.className = 'raw';
+              pre.textContent = String(item.value);
+              tdVal.appendChild(pre);
+            }
+            tr.append(tdKey, tdVal);
+            table.appendChild(tr);
+          }
+          inner.appendChild(table);
+        }
+
+        details.appendChild(inner);
+        decDiv.appendChild(details);
+        containerEl.appendChild(decDiv);
+      }
+    } catch {}
+  }
+
   function startNewSession(url) {
     if (!url) url = currentTabUrl || 'Unknown URL';
 
@@ -54,6 +166,7 @@
         if (current.separatorEl) {
           buildSeparatorContent(current.separatorEl, url, current.timestamp, true);
         }
+        addSessionDecodedIfAny(current.containerEl, url);
         return;
       }
     }
@@ -79,6 +192,7 @@
     buildSeparatorContent(separatorEl, url, timestamp, true);
 
     containerEl.appendChild(separatorEl);
+    addSessionDecodedIfAny(containerEl, url);
     listEl.prepend(containerEl);
 
     const newSession = {
@@ -125,7 +239,7 @@
   function tryDecode(val) {
     if (typeof val !== 'string' || !val.trim()) return null;
     val = val.trim();
-    
+
     // 1. Try Caesar-shift + LZString
     try {
       const decodedText = decodeText(val, 9);
@@ -325,7 +439,7 @@
         if (typeof item.value === 'object' && item.value !== null) {
           const tree = document.createElement('div');
           tree.className = 'jtree';
-          const root = jsonNode(null, item.value);
+          const root = jsonNode(null, item.value, true);
           if (root.tagName === 'DETAILS') root.open = true;
           tree.appendChild(root);
           tdVal.appendChild(tree);
@@ -407,11 +521,12 @@
 
 
   // --------------------------------------------------------- JSON tree UI
-  function jsonNode(key, value) {
+  function jsonNode(key, value, forceOpen = false) {
     const isObj = value !== null && typeof value === 'object';
     if (isObj) {
       if (value.__decoded) {
         const det = document.createElement('details');
+        if (forceOpen) det.open = true;
         const sum = document.createElement('summary');
         
         if (key !== null) {
@@ -429,13 +544,14 @@
         sum.appendChild(badge);
         det.appendChild(sum);
         
-        det.appendChild(jsonNode(null, value.value));
+        det.appendChild(jsonNode(null, value.value, forceOpen));
         return det;
       }
 
       const isArr = Array.isArray(value);
       const keys = isArr ? value : Object.keys(value);
       const det = document.createElement('details');
+      if (forceOpen) det.open = true;
       const sum = document.createElement('summary');
 
       if (key !== null) {
@@ -451,7 +567,7 @@
       det.appendChild(sum);
 
       const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
-      for (const [k, v] of children) det.appendChild(jsonNode(String(k), v));
+      for (const [k, v] of children) det.appendChild(jsonNode(String(k), v, forceOpen));
       return det;
     }
 
