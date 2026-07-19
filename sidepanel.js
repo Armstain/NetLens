@@ -11,6 +11,7 @@
   const filterEl = document.getElementById('filter');
   const errorsOnlyEl = document.getElementById('errorsOnly');
   const bodySearchEl = document.getElementById('bodySearch');
+  const apiOnlyEl = document.getElementById('apiOnly');
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
 
@@ -43,6 +44,10 @@
 
   function isError(d) {
     return d.failed || d.status === 0 || d.status >= 400;
+  }
+
+  function isApi(d) {
+    return /json|xml|graphql/i.test(d.contentType || '');
   }
 
   function pathOf(url) {
@@ -245,6 +250,7 @@
     row.className = `row ${statusClass(d)}`;
     row.dataset.hay = `${d.method} ${d.url}`.toLowerCase();
     row.dataset.err = isError(d) ? '1' : '0';
+    row.dataset.api = isApi(d) ? '1' : '0';
 
     const head = document.createElement('div');
     head.className = 'row-head';
@@ -345,10 +351,12 @@
     const q = filterEl.value.trim().toLowerCase();
     const errOnly = errorsOnlyEl.checked;
     const searchBodies = bodySearchEl.checked;
+    const apiOnly = apiOnlyEl.checked;
     for (const { data, el } of entries) {
       const matchesText =
         !q || el.dataset.hay.includes(q) || (searchBodies && bodyHay(data).includes(q));
-      const matches = matchesText && (!errOnly || el.dataset.err === '1');
+      const matches =
+        matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1');
       el.style.display = matches ? '' : 'none';
     }
   }
@@ -362,6 +370,7 @@
   filterEl.addEventListener('input', scheduleFilter);
   errorsOnlyEl.addEventListener('change', applyFilter);
   bodySearchEl.addEventListener('change', applyFilter);
+  apiOnlyEl.addEventListener('change', applyFilter);
 
   // ------------------------------------------------------------- ingest
   function addEntries(batch) {
