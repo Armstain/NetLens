@@ -173,23 +173,73 @@
     return null;
   }
 
+  function tryDecodeStructure(val) {
+    if (typeof val !== 'string') return null;
+    
+    const direct = tryDecode(val);
+    if (direct) return direct;
+
+    try {
+      const parsed = JSON.parse(val);
+      if (parsed && typeof parsed === 'object') {
+        let hasDecoded = false;
+        const decodedStruct = JSON.parse(JSON.stringify(parsed));
+        
+        const recurse = (obj) => {
+          if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) {
+              if (typeof obj[i] === 'string') {
+                const dec = tryDecode(obj[i]);
+                if (dec) {
+                  obj[i] = { __decoded: true, method: dec.method, value: dec.value };
+                  hasDecoded = true;
+                }
+              } else if (obj[i] && typeof obj[i] === 'object') {
+                recurse(obj[i]);
+              }
+            }
+          } else if (obj && typeof obj === 'object') {
+            for (const [k, v] of Object.entries(obj)) {
+              if (typeof v === 'string') {
+                const dec = tryDecode(v);
+                if (dec) {
+                  obj[k] = { __decoded: true, method: dec.method, value: dec.value };
+                  hasDecoded = true;
+                }
+              } else if (v && typeof v === 'object') {
+                recurse(v);
+              }
+            }
+          }
+        };
+        
+        recurse(decodedStruct);
+        if (hasDecoded) {
+          return { method: 'JSON Structure', value: decodedStruct };
+        }
+      }
+    } catch {}
+
+    return null;
+  }
+
   function hasDecodableData(d) {
     try {
       const u = new URL(d.url);
       for (const [, val] of u.searchParams) {
-        if (tryDecode(val)) return true;
+        if (tryDecodeStructure(val)) return true;
       }
       for (const val of u.pathname.split('/').filter(Boolean)) {
-        if (tryDecode(val)) return true;
+        if (tryDecodeStructure(val)) return true;
       }
     } catch {}
-    if (d.requestBody && tryDecode(d.requestBody)) return true;
-    if (d.responseBody && tryDecode(d.responseBody)) return true;
+    if (d.requestBody && tryDecodeStructure(d.requestBody)) return true;
+    if (d.responseBody && tryDecodeStructure(d.responseBody)) return true;
     for (const val of Object.values(d.requestHeaders || {})) {
-      if (tryDecode(val)) return true;
+      if (tryDecodeStructure(val)) return true;
     }
     for (const val of Object.values(d.responseHeaders || {})) {
-      if (tryDecode(val)) return true;
+      if (tryDecodeStructure(val)) return true;
     }
     return false;
   }
@@ -204,7 +254,7 @@
       const params = Array.from(u.searchParams.entries());
       const decodedParams = [];
       for (const [key, val] of params) {
-        const decoded = tryDecode(val);
+        const decoded = tryDecodeStructure(val);
         if (decoded) {
           decodedParams.push({ key, method: decoded.method, value: decoded.value });
         }
@@ -216,7 +266,7 @@
       const segments = u.pathname.split('/').filter(Boolean);
       const decodedSegments = [];
       for (let i = 0; i < segments.length; i++) {
-        const decoded = tryDecode(segments[i]);
+        const decoded = tryDecodeStructure(segments[i]);
         if (decoded) {
           decodedSegments.push({ key: `Path Segment [${i}]`, method: decoded.method, value: decoded.value });
         }
@@ -227,7 +277,7 @@
     } catch {}
 
     if (d.requestBody) {
-      const decoded = tryDecode(d.requestBody);
+      const decoded = tryDecodeStructure(d.requestBody);
       if (decoded) {
         decodedSections.push({
           title: 'Request Body',
@@ -237,7 +287,7 @@
     }
 
     if (d.responseBody) {
-      const decoded = tryDecode(d.responseBody);
+      const decoded = tryDecodeStructure(d.responseBody);
       if (decoded) {
         decodedSections.push({
           title: 'Response Body',
@@ -249,7 +299,7 @@
     const decodedHeaders = [];
     const checkHeaders = (headers, type) => {
       for (const [k, v] of Object.entries(headers || {})) {
-        const decoded = tryDecode(v);
+        const decoded = tryDecodeStructure(v);
         if (decoded) {
           decodedHeaders.push({ key: `${type}: ${k}`, method: decoded.method, value: decoded.value });
         }
@@ -381,6 +431,29 @@
   function jsonNode(key, value) {
     const isObj = value !== null && typeof value === 'object';
     if (isObj) {
+      if (value.__decoded) {
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        
+        if (key !== null) {
+          const k = document.createElement('span');
+          k.className = 'j-key';
+          k.textContent = JSON.stringify(key) + ': ';
+          sum.appendChild(k);
+        }
+        
+        const badge = document.createElement('span');
+        badge.className = 'decoded-method-label';
+        badge.style.marginTop = '0';
+        badge.style.marginLeft = '6px';
+        badge.textContent = value.method;
+        sum.appendChild(badge);
+        det.appendChild(sum);
+        
+        det.appendChild(jsonNode(null, value.value));
+        return det;
+      }
+
       const isArr = Array.isArray(value);
       const keys = isArr ? value : Object.keys(value);
       const det = document.createElement('details');
