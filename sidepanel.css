@@ -324,3 +324,50 @@ body { display: flex; flex-direction: column; }
 @media (prefers-reduced-motion: reduce) {
   .pulse { transition: none; }
 }
+
+/* ----------------------------------------------------------- session history */
+.session-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.session-separator .session-label {
+  color: var(--faint);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.session-separator .session-url {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  color: var(--indigo);
+}
+.session-separator .session-time {
+  font-family: var(--mono);
+  color: var(--faint);
+  flex-shrink: 0;
+}
+
+.row.archived {
+  opacity: 0.6;
+  filter: grayscale(30%);
+}
+.row.archived:hover {
+  opacity: 0.9;
+}
+

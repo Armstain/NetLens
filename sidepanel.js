@@ -16,9 +16,89 @@
   const clearBtn = document.getElementById('clearBtn');
 
   let currentTabId = null;
+  let currentTabUrl = '';
   let entries = [];           
+  let sessions = [];
   let paused = false;
   let pulseTimer = null;
+
+  // ponytail: history is kept in sidepanel memory. If the sidepanel is closed, history is lost. Upgrade path: use chrome.storage.session or background service worker.
+  function buildSeparatorContent(el, url, timestamp, isCurrent = true) {
+    el.textContent = '';
+    
+    const label = document.createElement('span');
+    label.className = 'session-label';
+    label.textContent = isCurrent ? 'Current Page' : 'Previous Page';
+    
+    const urlSpan = document.createElement('span');
+    urlSpan.className = 'session-url';
+    urlSpan.textContent = pathOf(url);
+    urlSpan.title = url;
+    
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'session-time';
+    const d = new Date(timestamp);
+    timeSpan.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
+    el.append(label, urlSpan, timeSpan);
+  }
+
+  function startNewSession(url) {
+    if (!url) url = currentTabUrl || 'Unknown URL';
+
+    if (sessions.length > 0) {
+      const current = sessions[sessions.length - 1];
+      if (current.entries.length === 0) {
+        current.url = url;
+        current.timestamp = Date.now();
+        if (current.separatorEl) {
+          buildSeparatorContent(current.separatorEl, url, current.timestamp, true);
+        }
+        return;
+      }
+    }
+
+    if (sessions.length > 0) {
+      const current = sessions[sessions.length - 1];
+      for (const entry of current.entries) {
+        entry.el.classList.add('archived');
+      }
+      if (current.separatorEl) {
+        buildSeparatorContent(current.separatorEl, current.url, current.timestamp, false);
+      }
+      const openRows = listEl.querySelectorAll('.row.open');
+      openRows.forEach(r => r.classList.remove('open'));
+    }
+
+    const separatorEl = document.createElement('div');
+    separatorEl.className = 'session-separator';
+    const timestamp = Date.now();
+    buildSeparatorContent(separatorEl, url, timestamp, true);
+
+    listEl.appendChild(separatorEl);
+
+    const newSession = {
+      url,
+      timestamp,
+      entries: [],
+      separatorEl
+    };
+    sessions.push(newSession);
+
+    while (sessions.length > 2) {
+      const oldSession = sessions.shift();
+      if (oldSession.separatorEl) oldSession.separatorEl.remove();
+      for (const entry of oldSession.entries) {
+        entry.el.remove();
+        const idx = entries.indexOf(entry);
+        if (idx !== -1) {
+          entries.splice(idx, 1);
+        }
+      }
+    }
+
+    updateCount();
+  }
 
   // ------------------------------------------------------------- helpers
   function fmtDuration(ms) {
@@ -359,6 +439,12 @@
         matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1');
       el.style.display = matches ? '' : 'none';
     }
+    for (const session of sessions) {
+      if (session.separatorEl) {
+        const hasVisible = session.entries.some(entry => entry.el.style.display !== 'none');
+        session.separatorEl.style.display = hasVisible ? '' : 'none';
+      }
+    }
   }
 
   let filterDebounce = null;
@@ -377,9 +463,17 @@
     if (!batch || !batch.length) return;
     const pinned = isPinnedToBottom();
     const frag = document.createDocumentFragment();
+
+    if (sessions.length === 0) {
+      startNewSession(currentTabUrl);
+    }
+    const currentSession = sessions[sessions.length - 1];
+
     for (const d of batch) {
       const el = buildRow(d);
-      entries.push({ data: d, el });
+      const entry = { data: d, el };
+      entries.push(entry);
+      currentSession.entries.push(entry);
       frag.appendChild(el);
     }
     listEl.appendChild(frag);
@@ -387,6 +481,13 @@
     while (entries.length > MAX_ROWS) {
       const removed = entries.shift();
       removed.el.remove();
+      for (const s of sessions) {
+        const idx = s.entries.indexOf(removed);
+        if (idx !== -1) {
+          s.entries.splice(idx, 1);
+          break;
+        }
+      }
     }
 
     applyFilter();
@@ -397,6 +498,7 @@
 
   function clearAll(alsoBuffer) {
     entries = [];
+    sessions = [];
     listEl.textContent = '';
     updateCount();
     if (alsoBuffer && currentTabId != null) {
@@ -419,18 +521,28 @@
     if (tabId == null || tabId === currentTabId) return;
     currentTabId = tabId;
     clearAll(false);
-    requestDump(tabId);
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError || !tab) return;
+      currentTabUrl = tab.url;
+      requestDump(tabId);
+    });
   }
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs && tabs[0]) trackTab(tabs[0].id);
+    if (tabs && tabs[0]) {
+      currentTabUrl = tabs[0].url;
+      trackTab(tabs[0].id);
+    }
   });
 
   chrome.tabs.onActivated.addListener(({ tabId }) => trackTab(tabId));
 
-  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tabId !== currentTabId) return;
-    if (changeInfo.status === 'loading') clearAll(false); // fresh page, fresh list
+    if (changeInfo.status === 'loading') {
+      currentTabUrl = tab.url;
+      startNewSession(tab.url);
+    }
   });
 
   // ---------------------------------------------------------- live batches
