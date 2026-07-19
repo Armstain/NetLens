@@ -124,21 +124,25 @@
 
   function decodeBase64(str) {
     if (typeof str !== 'string' || str.length < 8) return null;
-    let cleaned = str.replace(/-/g, '+').replace(/_/g, '/');
+    let cleaned = str.trim().replace(/-/g, '+').replace(/_/g, '/');
     while (cleaned.length % 4) {
       cleaned += '=';
     }
     if (!/^[A-Za-z0-9+/=]+$/.test(cleaned)) return null;
     try {
       const decoded = atob(cleaned);
-      if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(decoded)) {
-        return null;
-      }
+      
       try {
-        return JSON.parse(decoded);
-      } catch {
+        const parsed = JSON.parse(decoded);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      } catch {}
+
+      if (/^[\x20-\x7E\r\n\t]+$/.test(decoded)) {
         return decoded;
       }
+      return null;
     } catch {
       return null;
     }
@@ -153,10 +157,9 @@
       const decodedText = decodeText(val, 9);
       const decompressed = LZString.decompressFromEncodedURIComponent(decodedText);
       if (decompressed) {
-        try {
-          return { method: 'Caesar(9)+LZ', value: JSON.parse(decompressed) };
-        } catch {
-          return { method: 'Caesar(9)+LZ', value: decompressed };
+        const parsed = JSON.parse(decompressed);
+        if (parsed && typeof parsed === 'object') {
+          return { method: 'Caesar(9)+LZ', value: parsed };
         }
       }
     } catch {}
