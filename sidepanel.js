@@ -122,32 +122,6 @@
     return decoded;
   }
 
-  function decodeBase64(str) {
-    if (typeof str !== 'string' || str.length < 8) return null;
-    let cleaned = str.trim().replace(/-/g, '+').replace(/_/g, '/');
-    while (cleaned.length % 4) {
-      cleaned += '=';
-    }
-    if (!/^[A-Za-z0-9+/=]+$/.test(cleaned)) return null;
-    try {
-      const decoded = atob(cleaned);
-      
-      try {
-        const parsed = JSON.parse(decoded);
-        if (parsed && typeof parsed === 'object') {
-          return parsed;
-        }
-      } catch {}
-
-      if (/^[\x20-\x7E\r\n\t]+$/.test(decoded)) {
-        return decoded;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
   function tryDecode(val) {
     if (typeof val !== 'string' || !val.trim()) return null;
     val = val.trim();
@@ -164,11 +138,16 @@
       }
     } catch {}
 
-    // 2. Try Base64
-    const decodedB64 = decodeBase64(val);
-    if (decodedB64 !== null) {
-      return { method: 'Base64', value: decodedB64 };
-    }
+    // 2. Try plain LZString
+    try {
+      const decompressed = LZString.decompressFromEncodedURIComponent(val);
+      if (decompressed) {
+        const parsed = JSON.parse(decompressed);
+        if (parsed && typeof parsed === 'object') {
+          return { method: 'LZString', value: parsed };
+        }
+      }
+    } catch {}
 
     return null;
   }
