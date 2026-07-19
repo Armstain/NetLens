@@ -70,24 +70,29 @@
       openRows.forEach(r => r.classList.remove('open'));
     }
 
+    const containerEl = document.createElement('div');
+    containerEl.className = 'session-container';
+
     const separatorEl = document.createElement('div');
     separatorEl.className = 'session-separator';
     const timestamp = Date.now();
     buildSeparatorContent(separatorEl, url, timestamp, true);
 
-    listEl.appendChild(separatorEl);
+    containerEl.appendChild(separatorEl);
+    listEl.prepend(containerEl);
 
     const newSession = {
       url,
       timestamp,
       entries: [],
-      separatorEl
+      separatorEl,
+      containerEl
     };
     sessions.push(newSession);
 
     while (sessions.length > 2) {
       const oldSession = sessions.shift();
-      if (oldSession.separatorEl) oldSession.separatorEl.remove();
+      if (oldSession.containerEl) oldSession.containerEl.remove();
       for (const entry of oldSession.entries) {
         entry.el.remove();
         const idx = entries.indexOf(entry);
@@ -98,6 +103,212 @@
     }
 
     updateCount();
+  }
+
+  function decodeText(encodedText, shift) {
+    if (shift < 1 || shift > 25) return "";
+    let decoded = "";
+    const effectiveShift = 26 - shift;
+    for (let i = 0; i < encodedText.length; i++) {
+      let charCode = encodedText.charCodeAt(i);
+      if (charCode >= 65 && charCode <= 90) {
+        decoded += String.fromCharCode(((charCode - 65 + effectiveShift) % 26) + 65);
+      } else if (charCode >= 97 && charCode <= 122) {
+        decoded += String.fromCharCode(((charCode - 97 + effectiveShift) % 26) + 97);
+      } else {
+        decoded += encodedText.charAt(i);
+      }
+    }
+    return decoded;
+  }
+
+  function decodeBase64(str) {
+    if (typeof str !== 'string' || str.length < 8) return null;
+    let cleaned = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (cleaned.length % 4) {
+      cleaned += '=';
+    }
+    if (!/^[A-Za-z0-9+/=]+$/.test(cleaned)) return null;
+    try {
+      const decoded = atob(cleaned);
+      if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(decoded)) {
+        return null;
+      }
+      try {
+        return JSON.parse(decoded);
+      } catch {
+        return decoded;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  function tryDecode(val) {
+    if (typeof val !== 'string' || !val.trim()) return null;
+    val = val.trim();
+    
+    // 1. Try Caesar-shift + LZString
+    try {
+      const decodedText = decodeText(val, 9);
+      const decompressed = LZString.decompressFromEncodedURIComponent(decodedText);
+      if (decompressed) {
+        try {
+          return { method: 'Caesar(9)+LZ', value: JSON.parse(decompressed) };
+        } catch {
+          return { method: 'Caesar(9)+LZ', value: decompressed };
+        }
+      }
+    } catch {}
+
+    // 2. Try Base64
+    const decodedB64 = decodeBase64(val);
+    if (decodedB64 !== null) {
+      return { method: 'Base64', value: decodedB64 };
+    }
+
+    return null;
+  }
+
+  function hasDecodableData(d) {
+    try {
+      const u = new URL(d.url);
+      for (const [, val] of u.searchParams) {
+        if (tryDecode(val)) return true;
+      }
+      for (const val of u.pathname.split('/').filter(Boolean)) {
+        if (tryDecode(val)) return true;
+      }
+    } catch {}
+    if (d.requestBody && tryDecode(d.requestBody)) return true;
+    if (d.responseBody && tryDecode(d.responseBody)) return true;
+    for (const val of Object.values(d.requestHeaders || {})) {
+      if (tryDecode(val)) return true;
+    }
+    for (const val of Object.values(d.responseHeaders || {})) {
+      if (tryDecode(val)) return true;
+    }
+    return false;
+  }
+
+  function renderDecoded(container, d) {
+    container.textContent = '';
+    const decodedSections = [];
+
+    try {
+      const u = new URL(d.url);
+      
+      const params = Array.from(u.searchParams.entries());
+      const decodedParams = [];
+      for (const [key, val] of params) {
+        const decoded = tryDecode(val);
+        if (decoded) {
+          decodedParams.push({ key, method: decoded.method, value: decoded.value });
+        }
+      }
+      if (decodedParams.length > 0) {
+        decodedSections.push({ title: 'Query Parameters', items: decodedParams });
+      }
+
+      const segments = u.pathname.split('/').filter(Boolean);
+      const decodedSegments = [];
+      for (let i = 0; i < segments.length; i++) {
+        const decoded = tryDecode(segments[i]);
+        if (decoded) {
+          decodedSegments.push({ key: `Path Segment [${i}]`, method: decoded.method, value: decoded.value });
+        }
+      }
+      if (decodedSegments.length > 0) {
+        decodedSections.push({ title: 'URL Path Segments', items: decodedSegments });
+      }
+    } catch {}
+
+    if (d.requestBody) {
+      const decoded = tryDecode(d.requestBody);
+      if (decoded) {
+        decodedSections.push({
+          title: 'Request Body',
+          items: [{ key: 'Body', method: decoded.method, value: decoded.value }]
+        });
+      }
+    }
+
+    if (d.responseBody) {
+      const decoded = tryDecode(d.responseBody);
+      if (decoded) {
+        decodedSections.push({
+          title: 'Response Body',
+          items: [{ key: 'Body', method: decoded.method, value: decoded.value }]
+        });
+      }
+    }
+
+    const decodedHeaders = [];
+    const checkHeaders = (headers, type) => {
+      for (const [k, v] of Object.entries(headers || {})) {
+        const decoded = tryDecode(v);
+        if (decoded) {
+          decodedHeaders.push({ key: `${type}: ${k}`, method: decoded.method, value: decoded.value });
+        }
+      }
+    };
+    checkHeaders(d.requestHeaders, 'Request');
+    checkHeaders(d.responseHeaders, 'Response');
+    if (decodedHeaders.length > 0) {
+      decodedSections.push({ title: 'Headers', items: decodedHeaders });
+    }
+
+    if (decodedSections.length === 0) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = 'No encoded data detected.';
+      container.appendChild(note);
+      return;
+    }
+
+    for (const sec of decodedSections) {
+      const secTitle = document.createElement('div');
+      secTitle.className = 'decoded-section-title';
+      secTitle.textContent = sec.title;
+      container.appendChild(secTitle);
+
+      const table = document.createElement('table');
+      table.className = 'kv decoded-table';
+
+      for (const item of sec.items) {
+        const tr = document.createElement('tr');
+        
+        const tdKey = document.createElement('td');
+        tdKey.className = 'decoded-key-cell';
+        const keySpan = document.createElement('span');
+        keySpan.textContent = item.key;
+        const methodSpan = document.createElement('span');
+        methodSpan.className = 'decoded-method-label';
+        methodSpan.textContent = item.method;
+        tdKey.append(keySpan, document.createElement('br'), methodSpan);
+
+        const tdVal = document.createElement('td');
+        tdVal.className = 'decoded-val-cell';
+        
+        if (typeof item.value === 'object' && item.value !== null) {
+          const tree = document.createElement('div');
+          tree.className = 'jtree';
+          const root = jsonNode(null, item.value);
+          if (root.tagName === 'DETAILS') root.open = true;
+          tree.appendChild(root);
+          tdVal.appendChild(tree);
+        } else {
+          const pre = document.createElement('pre');
+          pre.className = 'raw';
+          pre.textContent = String(item.value);
+          tdVal.appendChild(pre);
+        }
+        
+        tr.append(tdKey, tdVal);
+        table.appendChild(tr);
+      }
+      container.appendChild(table);
+    }
   }
 
   // ------------------------------------------------------------- helpers
@@ -152,8 +363,16 @@
   }
 
   function isPinnedToBottom() {
-    return listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40;
+    if (sessions.length === 0) return true;
+    const currentSession = sessions[sessions.length - 1];
+    const container = currentSession.containerEl;
+    if (!container) return true;
+    
+    const containerBottom = container.offsetTop + container.offsetHeight;
+    const viewportBottom = listEl.scrollTop + listEl.clientHeight;
+    return (containerBottom - viewportBottom) < 40;
   }
+
 
   // --------------------------------------------------------- JSON tree UI
   function jsonNode(key, value) {
@@ -406,6 +625,10 @@
       Headers: () => renderHeaders(body, d),
     };
 
+    if (hasDecodableData(d)) {
+      views.Decoded = () => renderDecoded(body, d);
+    }
+
     let activeBtn = null;
     for (const name of Object.keys(views)) {
       const btn = document.createElement('button');
@@ -440,9 +663,9 @@
       el.style.display = matches ? '' : 'none';
     }
     for (const session of sessions) {
-      if (session.separatorEl) {
+      if (session.containerEl) {
         const hasVisible = session.entries.some(entry => entry.el.style.display !== 'none');
-        session.separatorEl.style.display = hasVisible ? '' : 'none';
+        session.containerEl.style.display = hasVisible ? '' : 'none';
       }
     }
   }
@@ -476,7 +699,7 @@
       currentSession.entries.push(entry);
       frag.appendChild(el);
     }
-    listEl.appendChild(frag);
+    currentSession.containerEl.appendChild(frag);
 
     while (entries.length > MAX_ROWS) {
       const removed = entries.shift();
@@ -493,7 +716,10 @@
     applyFilter();
     updateCount();
     pulse();
-    if (pinned) listEl.scrollTop = listEl.scrollHeight;
+    if (pinned) {
+      const lastEntry = currentSession.entries[currentSession.entries.length - 1];
+      if (lastEntry) lastEntry.el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    }
   }
 
   function clearAll(alsoBuffer) {
