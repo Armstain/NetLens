@@ -30,3 +30,8 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 - Can't capture on `chrome://` pages or the Chrome Web Store
 - Misses requests from service workers and other extensions
 - `FormData`/`Blob` request bodies are shown as placeholders, not serialized
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
