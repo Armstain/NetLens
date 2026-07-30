@@ -266,6 +266,67 @@
     return null;
   }
 
+  // ponytail: attempts to auto-repair truncated JSON strings (e.g. capped at 200KB) by closing strings and container brackets.
+  function tryParsePartialJson(str) {
+    if (typeof str !== 'string') return null;
+    let raw = str.trim();
+    if (!raw.startsWith('{') && !raw.startsWith('[')) return null;
+
+    let s = raw;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let inString = false;
+      let escaped = false;
+      const stack = [];
+
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (c === '\\') {
+            escaped = true;
+          } else if (c === '"') {
+            inString = false;
+          }
+        } else {
+          if (c === '"') {
+            inString = true;
+          } else if (c === '{' || c === '[') {
+            stack.push(c);
+          } else if (c === '}') {
+            if (stack.length && stack[stack.length - 1] === '{') stack.pop();
+          } else if (c === ']') {
+            if (stack.length && stack[stack.length - 1] === '[') stack.pop();
+          }
+        }
+      }
+
+      let candidate = s;
+      if (inString) candidate += '"';
+
+      let suffix = '';
+      for (let i = stack.length - 1; i >= 0; i--) {
+        suffix += stack[i] === '{' ? '}' : ']';
+      }
+
+      try {
+        const result = JSON.parse(candidate + suffix);
+        if (result && typeof result === 'object') return result;
+      } catch {}
+
+      const lastBoundary = Math.max(s.lastIndexOf(','), s.lastIndexOf('{'), s.lastIndexOf('['));
+      if (lastBoundary > 0 && lastBoundary < s.length - 1) {
+        s = s.slice(0, lastBoundary + (s[lastBoundary] === ',' ? 0 : 1));
+      } else if (s.length > 1) {
+        s = s.slice(0, -1);
+      } else {
+        break;
+      }
+    }
+
+    return null;
+  }
+
   function tryDecodeStructure(val) {
     if (typeof val !== 'string') return null;
     
@@ -273,7 +334,12 @@
     if (direct) return direct;
 
     try {
-      const parsed = JSON.parse(val);
+      let parsed = null;
+      try {
+        parsed = JSON.parse(val);
+      } catch {
+        parsed = tryParsePartialJson(val);
+      }
       if (parsed && typeof parsed === 'object') {
         let hasDecoded = false;
         const decodedStruct = JSON.parse(JSON.stringify(parsed));
@@ -416,6 +482,35 @@
       const secTitle = document.createElement('div');
       secTitle.className = 'decoded-section-title';
       secTitle.textContent = sec.title;
+
+      if (sec.items.length === 1 && sec.items[0].key === 'Body') {
+        const item = sec.items[0];
+        if (item.method && item.method !== 'JSON Structure') {
+          const methodSpan = document.createElement('span');
+          methodSpan.className = 'decoded-method-label';
+          methodSpan.style.marginTop = '0';
+          methodSpan.style.marginLeft = '8px';
+          methodSpan.textContent = item.method;
+          secTitle.appendChild(methodSpan);
+        }
+        container.appendChild(secTitle);
+
+        if (typeof item.value === 'object' && item.value !== null) {
+          const tree = document.createElement('div');
+          tree.className = 'jtree';
+          const root = jsonNode(null, item.value, true);
+          if (root.tagName === 'DETAILS') root.open = true;
+          tree.appendChild(root);
+          container.appendChild(tree);
+        } else {
+          const pre = document.createElement('pre');
+          pre.className = 'raw';
+          pre.textContent = String(item.value);
+          container.appendChild(pre);
+        }
+        continue;
+      }
+
       container.appendChild(secTitle);
 
       const table = document.createElement('table');
@@ -428,10 +523,14 @@
         tdKey.className = 'decoded-key-cell';
         const keySpan = document.createElement('span');
         keySpan.textContent = item.key;
-        const methodSpan = document.createElement('span');
-        methodSpan.className = 'decoded-method-label';
-        methodSpan.textContent = item.method;
-        tdKey.append(keySpan, document.createElement('br'), methodSpan);
+        tdKey.appendChild(keySpan);
+
+        if (item.method && item.method !== 'JSON Structure') {
+          const methodSpan = document.createElement('span');
+          methodSpan.className = 'decoded-method-label';
+          methodSpan.textContent = item.method;
+          tdKey.append(document.createElement('br'), methodSpan);
+        }
 
         const tdVal = document.createElement('td');
         tdVal.className = 'decoded-val-cell';
@@ -604,15 +703,21 @@
       return;
     }
     addCopyButton(container, text);
+    let parsed = null;
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = tryParsePartialJson(text);
+    }
+
+    if (parsed !== null && typeof parsed === 'object') {
       const tree = document.createElement('div');
       tree.className = 'jtree';
       const root = jsonNode(null, parsed);
       if (root.tagName === 'DETAILS') root.open = true;
       tree.appendChild(root);
       container.appendChild(tree);
-    } catch {
+    } else {
       const pre = document.createElement('pre');
       pre.className = 'raw';
       pre.textContent = text;
@@ -760,9 +865,13 @@
     const toggle = () => {
       const open = row.classList.toggle('open');
       head.setAttribute('aria-expanded', String(open));
-      if (open && !built) {
-        built = true;
-        buildDetail(detail, d);
+      if (open) {
+        if (!built) {
+          built = true;
+          buildDetail(detail, d);
+        }
+        const q = filterEl.value.trim().toLowerCase();
+        if (q) highlightMatches(detail, q, true);
       }
     };
     head.addEventListener('click', toggle);
@@ -800,7 +909,20 @@
       views.Decoded = () => renderDecoded(body, d);
     }
 
+    const q = filterEl.value.trim().toLowerCase();
+    let defaultTab = 'Response';
+    if (q) {
+      if (typeof d.responseBody === 'string' && d.responseBody.toLowerCase().includes(q)) {
+        defaultTab = 'Response';
+      } else if (views.Decoded && bodyHay(d).includes(q)) {
+        defaultTab = 'Decoded';
+      } else if (typeof d.requestBody === 'string' && d.requestBody.toLowerCase().includes(q)) {
+        defaultTab = 'Payload';
+      }
+    }
+
     let activeBtn = null;
+    let activeName = defaultTab;
     for (const name of Object.keys(views)) {
       const btn = document.createElement('button');
       btn.className = 'tab';
@@ -810,14 +932,99 @@
         activeBtn = btn;
         btn.classList.add('active');
         views[name]();
+        const currentQ = filterEl.value.trim().toLowerCase();
+        if (currentQ) highlightMatches(body, currentQ, true);
       });
       tabs.appendChild(btn);
-      if (!activeBtn) { activeBtn = btn; }
+      if (name === defaultTab) { activeBtn = btn; }
+    }
+
+    if (!activeBtn && tabs.firstChild) {
+      activeBtn = tabs.firstChild;
+      activeName = Object.keys(views)[0];
     }
 
     container.append(tabs, body);
-    activeBtn.classList.add('active');
-    views.Response(); 
+    if (activeBtn) activeBtn.classList.add('active');
+    views[activeName]();
+    if (q) highlightMatches(body, q, true);
+  }
+
+  // -------------------------------------------------------- text highlighting
+  function clearHighlights(containerEl) {
+    if (!containerEl) return;
+    const marks = containerEl.querySelectorAll('mark.hl');
+    for (const mark of marks) {
+      const parent = mark.parentNode;
+      if (parent) {
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+        parent.normalize();
+      }
+    }
+  }
+
+  function highlightMatches(containerEl, queryStr, scrollIntoView = false) {
+    if (!containerEl) return;
+    clearHighlights(containerEl);
+    if (!queryStr) return;
+    const q = queryStr.toLowerCase();
+
+    const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, null, false);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && node.nodeValue.toLowerCase().includes(q)) {
+        const parent = node.parentElement;
+        if (parent && !parent.closest('.copy-btn, .tab, mark')) {
+          textNodes.push(node);
+        }
+      }
+    }
+
+    const createdMarks = [];
+
+    for (const textNode of textNodes) {
+      const text = textNode.nodeValue;
+      const lower = text.toLowerCase();
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      let idx = lower.indexOf(q);
+
+      while (idx !== -1) {
+        if (idx > lastIdx) {
+          frag.appendChild(document.createTextNode(text.slice(lastIdx, idx)));
+        }
+        const mark = document.createElement('mark');
+        mark.className = 'hl';
+        mark.textContent = text.slice(idx, idx + q.length);
+        frag.appendChild(mark);
+        createdMarks.push(mark);
+        lastIdx = idx + q.length;
+        idx = lower.indexOf(q, lastIdx);
+      }
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      }
+      if (textNode.parentNode) {
+        textNode.parentNode.replaceChild(frag, textNode);
+      }
+    }
+
+    for (const mark of createdMarks) {
+      let p = mark.parentElement;
+      while (p && p !== containerEl) {
+        if (p.tagName === 'DETAILS') {
+          p.open = true;
+        }
+        p = p.parentElement;
+      }
+    }
+
+    if (scrollIntoView && createdMarks.length > 0) {
+      try {
+        createdMarks[0].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } catch {}
+    }
   }
 
   // ------------------------------------------------------------ filtering
@@ -832,6 +1039,22 @@
       const matches =
         matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1');
       el.style.display = matches ? '' : 'none';
+
+      const pathBdo = el.querySelector('.path bdo');
+      if (pathBdo) {
+        highlightMatches(pathBdo, matches ? q : '');
+      }
+
+      if (el.classList.contains('open')) {
+        const detail = el.querySelector('.row-detail');
+        if (detail) {
+          if (matches && q) {
+            highlightMatches(detail, q, true);
+          } else {
+            clearHighlights(detail);
+          }
+        }
+      }
     }
     for (const session of sessions) {
       if (session.containerEl) {

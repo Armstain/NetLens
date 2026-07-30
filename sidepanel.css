@@ -1,5 +1,3 @@
-
-
 :root {
   --bg: #0d1117;
   --surface: #161b22;
@@ -392,15 +390,19 @@ body { display: flex; flex-direction: column; }
   margin-top: 0;
 }
 .decoded-table td {
-  padding-top: 8px !important;
-  padding-bottom: 8px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
   border-bottom: 1px solid var(--border);
 }
 .decoded-key-cell {
-  width: 140px;
+  width: auto;
+  min-width: 60px;
+  max-width: 180px;
+  padding-right: 12px !important;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text) !important;
+  white-space: nowrap;
 }
 .decoded-method-label {
   display: inline-block;
@@ -412,7 +414,6 @@ body { display: flex; flex-direction: column; }
   color: var(--amber);
   padding: 1px 4px;
   border-radius: 3px;
-  margin-top: 4px;
   text-transform: uppercase;
 }
 .decoded-val-cell {
@@ -450,4 +451,11 @@ body { display: flex; flex-direction: column; }
 }
 .session-decoded-inner {
   padding: 4px 0;
+}
+
+mark.hl {
+  background: rgba(245, 158, 11, 0.35);
+  color: #fef08a;
+  border-radius: 2px;
+  padding: 0 1px;
 }
