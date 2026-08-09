@@ -10,7 +10,6 @@
   const pulseEl = document.getElementById('pulse');
   const filterEl = document.getElementById('filter');
   const errorsOnlyEl = document.getElementById('errorsOnly');
-  const bodySearchEl = document.getElementById('bodySearch');
   const apiOnlyEl = document.getElementById('apiOnly');
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -236,32 +235,181 @@
     return decoded;
   }
 
+  // ------------------------------------------------------- decoder registry
+  let customDecoders = [];
+  try {
+    chrome.storage.local.get(['netlensCustomDecoders'], (res) => {
+      if (res && Array.isArray(res.netlensCustomDecoders)) customDecoders = res.netlensCustomDecoders;
+      renderDecoderList();
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.netlensCustomDecoders) {
+        customDecoders = changes.netlensCustomDecoders.newValue || [];
+      }
+    });
+  } catch {}
+
+  function saveCustomDecoders() {
+    chrome.storage.local.set({ netlensCustomDecoders: customDecoders });
+  }
+
+  function isMostlyPrintable(s) {
+    if (!s || !s.length) return false;
+    let bad = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++;
+    }
+    return bad / s.length < 0.1;
+  }
+
+  function b64Decode(str) {
+    if (!/^[A-Za-z0-9+/]{8,}={0,2}$/.test(str) || str.length % 4 !== 0) return null;
+    try {
+      const bin = atob(str);
+      return isMostlyPrintable(bin) ? bin : null;
+    } catch { return null; }
+  }
+
+  function b64UrlDecode(str) {
+    if (!/^[A-Za-z0-9_-]{8,}$/.test(str)) return null;
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - str.length % 4) % 4);
+    try {
+      const bin = atob(b64);
+      return isMostlyPrintable(bin) ? bin : null;
+    } catch { return null; }
+  }
+
+  function hexDecodeStr(str) {
+    if (!/^[0-9a-fA-F]{8,}$/.test(str) || str.length % 2 !== 0) return null;
+    let out = '';
+    for (let i = 0; i < str.length; i += 2) out += String.fromCharCode(parseInt(str.substr(i, 2), 16));
+    return isMostlyPrintable(out) ? out : null;
+  }
+
+  function jwtDecode(str) {
+    const parts = str.split('.');
+    if (parts.length !== 3) return null;
+    try {
+      const h = b64UrlDecode(parts[0]);
+      const p = b64UrlDecode(parts[1]);
+      if (h == null || p == null) return null;
+      return { header: JSON.parse(h), payload: JSON.parse(p), signature: parts[2] };
+    } catch { return null; }
+  }
+
+  function unicodeEscapeDecode(str) {
+    if (!/\\u[0-9a-fA-F]{4}/.test(str)) return null;
+    try {
+      const out = JSON.parse('"' + str.replace(/"/g, '\\"') + '"');
+      return out !== str ? out : null;
+    } catch { return null; }
+  }
+
+  function urlDecodeStr(str) {
+    if (!/%[0-9a-fA-F]{2}/.test(str)) return null;
+    try {
+      const out = decodeURIComponent(str);
+      return out !== str ? out : null;
+    } catch { return null; }
+  }
+
+  function tryJsonValue(v) {
+    if (typeof v !== 'string') return v;
+    try {
+      const p = JSON.parse(v);
+      return (p && typeof p === 'object') ? p : v;
+    } catch { return v; }
+  }
+
+  // step fns take a raw string, return string|object|null (null = doesn't apply)
+  const DECODER_STEPS = [
+    { id: 'legacy', label: 'Caesar(9)+LZ', auto: true, fn: (v) => {
+        const t = decodeText(v, 9);
+        const d = LZString.decompressFromEncodedURIComponent(t);
+        if (!d) return null;
+        const parsed = JSON.parse(d);
+        return (parsed && typeof parsed === 'object') ? parsed : null;
+      } },
+    { id: 'lzstring', label: 'LZString', auto: true, fn: (v) => {
+        const d = LZString.decompressFromEncodedURIComponent(v);
+        return d ? tryJsonValue(d) : null;
+      } },
+    { id: 'jwt', label: 'JWT', auto: true, fn: jwtDecode },
+    { id: 'unicodeEscape', label: 'Unicode Escape', auto: true, fn: unicodeEscapeDecode },
+    { id: 'urlDecode', label: 'URL Decode', auto: true, fn: urlDecodeStr },
+    { id: 'base64url', label: 'Base64URL', auto: true, fn: (v) => { const d = b64UrlDecode(v); return d == null ? null : tryJsonValue(d); } },
+    { id: 'base64', label: 'Base64', auto: true, fn: (v) => { const d = b64Decode(v); return d == null ? null : tryJsonValue(d); } },
+    { id: 'hex', label: 'Hex', auto: true, fn: (v) => { const d = hexDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
+    { id: 'json', label: 'JSON', auto: false, fn: (v) => {
+        const s = v.trim();
+        if (!s.startsWith('{') && !s.startsWith('[')) return null;
+        try { const p = JSON.parse(s); return (p && typeof p === 'object') ? p : null; } catch { return null; }
+      } },
+  ];
+  const DECODER_STEP_MAP = Object.fromEntries(DECODER_STEPS.map(s => [s.id, s]));
+
+  function runChainDecoder(steps, val) {
+    let cur = val;
+    for (const stepId of steps) {
+      const step = DECODER_STEP_MAP[stepId];
+      if (!step) return null;
+      let out;
+      try { out = step.fn(cur); } catch { return null; }
+      if (out == null) return null;
+      cur = (typeof out === 'object') ? JSON.stringify(out) : out;
+    }
+    return tryJsonValue(cur);
+  }
+
+  function runCustomFunction(code, input, timeoutMs = 1000) {
+    return new Promise((resolve, reject) => {
+      const src = `self.onmessage=function(e){try{const fn=new Function('input',e.data.code);const r=fn(e.data.input);self.postMessage({ok:true,result:r});}catch(err){self.postMessage({ok:false,error:String(err&&err.message||err)});}};`;
+      let worker;
+      try {
+        const blob = new Blob([src], { type: 'application/javascript' });
+        worker = new Worker(URL.createObjectURL(blob));
+      } catch (e) { reject(e); return; }
+      const timer = setTimeout(() => {
+        worker.terminate();
+        reject(new Error('Timed out (possible infinite loop)'));
+      }, timeoutMs);
+      worker.onmessage = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        if (e.data && e.data.ok) resolve(e.data.result);
+        else reject(new Error((e.data && e.data.error) || 'Unknown error'));
+      };
+      worker.onerror = (e) => {
+        clearTimeout(timer);
+        worker.terminate();
+        reject(new Error(e.message || 'Worker error'));
+      };
+      worker.postMessage({ code, input });
+    });
+  }
+
   function tryDecode(val) {
     if (typeof val !== 'string' || !val.trim()) return null;
     val = val.trim();
 
-    // 1. Try Caesar-shift + LZString
-    try {
-      const decodedText = decodeText(val, 9);
-      const decompressed = LZString.decompressFromEncodedURIComponent(decodedText);
-      if (decompressed) {
-        const parsed = JSON.parse(decompressed);
-        if (parsed && typeof parsed === 'object') {
-          return { method: 'Caesar(9)+LZ', value: parsed };
+    for (const cd of customDecoders) {
+      if (cd.type !== 'chain' || !Array.isArray(cd.steps) || !cd.steps.length) continue;
+      try {
+        const result = runChainDecoder(cd.steps, val);
+        if (result != null && (typeof result === 'object' || (typeof result === 'string' && result !== val && isMostlyPrintable(result)))) {
+          return { method: cd.name || 'Custom', value: result };
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
-    // 2. Try plain LZString
-    try {
-      const decompressed = LZString.decompressFromEncodedURIComponent(val);
-      if (decompressed) {
-        const parsed = JSON.parse(decompressed);
-        if (parsed && typeof parsed === 'object') {
-          return { method: 'LZString', value: parsed };
-        }
-      }
-    } catch {}
+    for (const step of DECODER_STEPS) {
+      if (!step.auto) continue;
+      try {
+        const result = step.fn(val);
+        if (result != null) return { method: step.label, value: result };
+      } catch {}
+    }
 
     return null;
   }
@@ -475,7 +623,6 @@
       note.className = 'note';
       note.textContent = 'No encoded data detected.';
       container.appendChild(note);
-      return;
     }
 
     for (const sec of decodedSections) {
@@ -554,6 +701,100 @@
       }
       container.appendChild(table);
     }
+
+    appendManualDecodePanel(container);
+  }
+
+  function appendManualDecodePanel(container) {
+    const details = document.createElement('details');
+    details.className = 'manual-decode';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Manual Decode';
+    details.appendChild(summary);
+
+    const inner = document.createElement('div');
+    inner.className = 'manual-decode-inner';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'manual-input';
+    textarea.placeholder = 'Paste a value to decode…';
+
+    const controls = document.createElement('div');
+    controls.className = 'manual-controls';
+
+    const select = document.createElement('select');
+    select.className = 'manual-select';
+    for (const step of DECODER_STEPS) {
+      const opt = document.createElement('option');
+      opt.value = `builtin:${step.id}`;
+      opt.textContent = step.label;
+      select.appendChild(opt);
+    }
+    for (const cd of customDecoders) {
+      const opt = document.createElement('option');
+      opt.value = `custom:${cd.id}`;
+      opt.textContent = `${cd.name} (custom)`;
+      select.appendChild(opt);
+    }
+
+    const runBtn = document.createElement('button');
+    runBtn.type = 'button';
+    runBtn.className = 'mini-btn';
+    runBtn.textContent = 'Decode';
+
+    const output = document.createElement('div');
+    output.className = 'manual-output';
+
+    runBtn.addEventListener('click', async () => {
+      const val = textarea.value;
+      if (!val) return;
+      output.textContent = '';
+      const [kind, id] = select.value.split(':');
+      runBtn.disabled = true;
+      try {
+        let result;
+        if (kind === 'builtin') {
+          result = DECODER_STEP_MAP[id].fn(val);
+          if (result == null) throw new Error('Decoder produced no output for this input.');
+        } else {
+          const cd = customDecoders.find(c => c.id === id);
+          if (!cd) throw new Error('Decoder not found.');
+          if (cd.type === 'function') {
+            runBtn.textContent = 'Decoding…';
+            result = await runCustomFunction(cd.code, val);
+          } else {
+            result = runChainDecoder(cd.steps, val);
+            if (result == null) throw new Error('Chain produced no output for this input.');
+          }
+        }
+        if (typeof result === 'object' && result !== null) {
+          const tree = document.createElement('div');
+          tree.className = 'jtree';
+          const root = jsonNode(null, result, true);
+          if (root.tagName === 'DETAILS') root.open = true;
+          tree.appendChild(root);
+          output.appendChild(tree);
+        } else {
+          const pre = document.createElement('pre');
+          pre.className = 'raw';
+          pre.textContent = String(result);
+          output.appendChild(pre);
+        }
+      } catch (err) {
+        const errEl = document.createElement('div');
+        errEl.className = 'manual-error';
+        errEl.textContent = err.message || String(err);
+        output.appendChild(errEl);
+      } finally {
+        runBtn.disabled = false;
+        runBtn.textContent = 'Decode';
+      }
+    });
+
+    controls.append(select, runBtn);
+    inner.append(textarea, controls, output);
+    details.appendChild(inner);
+    container.appendChild(details);
   }
 
   // ------------------------------------------------------------- helpers
@@ -1031,11 +1272,10 @@
   function applyFilter() {
     const q = filterEl.value.trim().toLowerCase();
     const errOnly = errorsOnlyEl.checked;
-    const searchBodies = bodySearchEl.checked;
     const apiOnly = apiOnlyEl.checked;
     for (const { data, el } of entries) {
       const matchesText =
-        !q || el.dataset.hay.includes(q) || (searchBodies && bodyHay(data).includes(q));
+        !q || el.dataset.hay.includes(q) || bodyHay(data).includes(q);
       const matches =
         matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1');
       el.style.display = matches ? '' : 'none';
@@ -1072,7 +1312,6 @@
 
   filterEl.addEventListener('input', scheduleFilter);
   errorsOnlyEl.addEventListener('change', applyFilter);
-  bodySearchEl.addEventListener('change', applyFilter);
   apiOnlyEl.addEventListener('change', applyFilter);
 
   // ------------------------------------------------------------- ingest
@@ -1183,6 +1422,115 @@
   });
 
   clearBtn.addEventListener('click', () => clearAll(true));
+
+  // ------------------------------------------------ custom decoder manager
+  const decodersBtn = document.getElementById('decodersBtn');
+  const decoderPanel = document.getElementById('decoderPanel');
+  const decoderPanelClose = document.getElementById('decoderPanelClose');
+  const decoderListEl = document.getElementById('decoderList');
+  const decoderForm = document.getElementById('decoderForm');
+  const decoderNameEl = document.getElementById('decoderName');
+  const decoderChainGroup = document.getElementById('decoderChainGroup');
+  const decoderChainStepsEl = document.getElementById('decoderChainSteps');
+  const decoderCodeGroup = document.getElementById('decoderCodeGroup');
+  const decoderCodeEl = document.getElementById('decoderCode');
+
+  function buildChainStepCheckboxes() {
+    if (!decoderChainStepsEl) return;
+    decoderChainStepsEl.textContent = '';
+    for (const step of DECODER_STEPS) {
+      const label = document.createElement('label');
+      label.className = 'decoder-step-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = step.id;
+      label.append(cb, document.createTextNode(step.label));
+      decoderChainStepsEl.appendChild(label);
+    }
+  }
+
+  function renderDecoderList() {
+    if (!decoderListEl) return;
+    decoderListEl.textContent = '';
+    if (!customDecoders.length) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = 'No custom decoders yet.';
+      decoderListEl.appendChild(note);
+      return;
+    }
+    for (const cd of customDecoders) {
+      const row = document.createElement('div');
+      row.className = 'decoder-row';
+      const label = document.createElement('span');
+      const stepLabels = cd.type === 'chain' ? cd.steps.map(id => (DECODER_STEP_MAP[id] || { label: id }).label) : [];
+      label.textContent = cd.type === 'function' ? `${cd.name} (JS function)` : `${cd.name} (${stepLabels.join(' → ')})`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'mini-btn danger';
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => {
+        customDecoders = customDecoders.filter(x => x.id !== cd.id);
+        saveCustomDecoders();
+        renderDecoderList();
+      });
+      row.append(label, del);
+      decoderListEl.appendChild(row);
+    }
+  }
+
+  if (decodersBtn && decoderPanel) {
+    buildChainStepCheckboxes();
+
+    const openPanel = () => {
+      renderDecoderList();
+      decoderPanel.hidden = false;
+    };
+    const closePanel = () => { decoderPanel.hidden = true; };
+
+    decodersBtn.addEventListener('click', () => {
+      if (decoderPanel.hidden) openPanel(); else closePanel();
+    });
+    decoderPanelClose.addEventListener('click', closePanel);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !decoderPanel.hidden) closePanel();
+    });
+
+    decoderForm.querySelectorAll('input[name="decoderType"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        const isFn = decoderForm.decoderType.value === 'function';
+        decoderChainGroup.style.display = isFn ? 'none' : '';
+        decoderCodeGroup.style.display = isFn ? '' : 'none';
+      });
+    });
+
+    decoderForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = decoderNameEl.value.trim();
+      if (!name) return;
+      const type = decoderForm.decoderType.value;
+      const entry = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, type };
+      if (type === 'function') {
+        const code = decoderCodeEl.value.trim();
+        if (!code) return;
+        entry.code = code;
+      } else {
+        const steps = Array.from(decoderChainStepsEl.querySelectorAll('input:checked')).map(cb => cb.value);
+        if (!steps.length) {
+          decoderChainStepsEl.classList.add('input-error');
+          return;
+        }
+        decoderChainStepsEl.classList.remove('input-error');
+        entry.steps = steps;
+      }
+      customDecoders.push(entry);
+      saveCustomDecoders();
+      renderDecoderList();
+      decoderForm.reset();
+      decoderChainGroup.style.display = '';
+      decoderCodeGroup.style.display = 'none';
+    });
+  }
 
   updateCount();
 })();

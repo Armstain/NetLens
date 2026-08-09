@@ -15,6 +15,7 @@
       <span class="count" id="count">0</span>
     </div>
     <div class="controls">
+      <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders">⚙</button>
       <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture">⏸</button>
       <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests">⌫</button>
     </div>
@@ -26,14 +27,39 @@
       <input type="checkbox" id="errorsOnly" />
       <span>Errors only</span>
     </label>
-    <label class="errors-toggle bodies-toggle" title="Also search request/response bodies (slower on large payloads)">
-      <input type="checkbox" id="bodySearch" checked />
-      <span>Search bodies</span>
-    </label>
     <label class="errors-toggle api-toggle" title="Only show JSON/XML API responses">
       <input type="checkbox" id="apiOnly" />
       <span>API only</span>
     </label>
+  </div>
+
+  <div id="decoderPanel" class="decoder-panel" hidden>
+    <div class="decoder-panel-head">
+      <span>My Custom Decoders</span>
+      <button id="decoderPanelClose" class="icon-btn" aria-label="Close">✕</button>
+    </div>
+    <p class="decoder-panel-desc">Decoders you save here run automatically next to the built-in ones (Base64, JWT, Hex…) and also show up in every request's "Manual Decode" dropdown.</p>
+    <div id="decoderList" class="decoder-list"></div>
+    <form id="decoderForm" class="decoder-form">
+      <input id="decoderName" type="text" placeholder="Decoder name (e.g. Auth Token)" autocomplete="off" required />
+      <div class="decoder-type-toggle">
+        <label><input type="radio" name="decoderType" value="chain" checked /> Chain of built-in steps</label>
+        <label><input type="radio" name="decoderType" value="function" /> Custom JS function</label>
+      </div>
+      <div id="decoderChainGroup">
+        <div class="decoder-hint">Use this if your data is standard encodings stacked together (e.g. Base64 of a JSON string). Not for a made-up cipher — use "Custom JS function" for that.</div>
+        <div id="decoderChainSteps" class="decoder-chain-steps"></div>
+        <div class="decoder-hint">Check the steps your data goes through. They run in the order listed above, top to bottom.</div>
+      </div>
+      <div id="decoderCodeGroup" style="display:none;">
+        <div class="decoder-hint">Use this for your own scheme (e.g. a Caesar shift). Write a JS function body that takes the raw string as <code>input</code> and <code>return</code>s the decoded value.</div>
+        <textarea id="decoderCode" class="decoder-code" placeholder="return input.split('').reverse().join('');"></textarea>
+        <div class="decoder-hint">Runs in an isolated worker with no access to the page, tabs, or extension storage.</div>
+      </div>
+      <div class="decoder-form-actions">
+        <button type="submit" class="mini-btn">Save Decoder</button>
+      </div>
+    </form>
   </div>
 
   <main id="list" class="list" aria-live="polite"></main>

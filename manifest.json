@@ -3,7 +3,7 @@
   "name": "NetLens",
   "version": "5.0",
   "description": "See your page's API calls — payloads, responses, headers — in a side panel. No DevTools required.",
-  "permissions": ["sidePanel", "tabs"],
+  "permissions": ["sidePanel", "tabs", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
