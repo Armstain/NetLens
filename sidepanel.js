@@ -957,7 +957,24 @@
       const root = jsonNode(null, parsed);
       if (root.tagName === 'DETAILS') root.open = true;
       tree.appendChild(root);
-      container.appendChild(tree);
+
+      const rawPre = document.createElement('pre');
+      rawPre.className = 'raw';
+      rawPre.textContent = text;
+      rawPre.hidden = true;
+
+      const toggleBtn = document.createElement('button');
+      toggleBtn.className = 'copy-btn raw-toggle-btn';
+      toggleBtn.textContent = 'Raw';
+      toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const showingRaw = !rawPre.hidden;
+        rawPre.hidden = showingRaw;
+        tree.hidden = !showingRaw;
+        toggleBtn.textContent = showingRaw ? 'Raw' : 'Pretty';
+      });
+
+      container.append(toggleBtn, tree, rawPre);
     } else {
       const pre = document.createElement('pre');
       pre.className = 'raw';
