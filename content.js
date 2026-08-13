@@ -118,8 +118,6 @@
 
   function serializeElement(el) {
     const rect = el.getBoundingClientRect();
-    const attributes = {};
-    for (const a of el.attributes || []) attributes[a.name] = a.value;
     const cs = getComputedStyle(el);
     const computed = {};
     for (const k of COMPUTED_KEYS) computed[k] = cs[k];
@@ -128,7 +126,6 @@
       tag: el.tagName.toLowerCase(),
       id: el.id || null,
       classes: typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(Boolean) : [],
-      attributes,
       selector: buildSelector(el),
       rect: { width: Math.round(rect.width), height: Math.round(rect.height) },
       computed,

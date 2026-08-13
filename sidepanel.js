@@ -1653,7 +1653,7 @@
 
     const selectorRow = document.createElement('div');
     selectorRow.className = 'detail-actions';
-    selectorRow.style.padding = '8px 0 0';
+    selectorRow.style.padding = '0';
     selectorRow.style.alignItems = 'center';
     const selectorText = document.createElement('code');
     selectorText.className = 'raw';
@@ -1665,41 +1665,38 @@
     selectorText.textContent = data.selector;
     selectorRow.appendChild(selectorText);
     addCopyButton(selectorRow, data.selector, 'Copy selector');
-    inspectBodyEl.appendChild(selectorRow);
+    inspectBodyEl.appendChild(buildInspectSection('Selector', true, selectorRow));
 
-    const attrTitle = document.createElement('div');
-    attrTitle.className = 'decoded-section-title';
-    attrTitle.textContent = 'Attributes';
-    inspectBodyEl.appendChild(attrTitle);
-    const attrItems = Object.entries(data.attributes).map(([key, value]) => ({ key, value }));
-    inspectBodyEl.appendChild(attrItems.length ? buildDecodedTable(attrItems) : (() => {
-      const n = document.createElement('div'); n.className = 'note storage-empty'; n.textContent = 'No attributes.'; return n;
-    })());
+    inspectBodyEl.appendChild(buildInspectSection('Computed style', true,
+      buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value })))));
 
-    const styleTitle = document.createElement('div');
-    styleTitle.className = 'decoded-section-title';
-    styleTitle.textContent = 'Computed style';
-    inspectBodyEl.appendChild(styleTitle);
-    inspectBodyEl.appendChild(buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value }))));
-
-    const htmlTitle = document.createElement('div');
-    htmlTitle.className = 'decoded-section-title';
-    htmlTitle.textContent = 'Outer HTML';
-    inspectBodyEl.appendChild(htmlTitle);
+    const htmlWrap = document.createElement('div');
     if (data.outerHTMLTruncated) {
       const trunc = document.createElement('div');
       trunc.className = 'trunc-note';
       trunc.textContent = '⚠ Truncated at 20KB';
-      inspectBodyEl.appendChild(trunc);
+      htmlWrap.appendChild(trunc);
     }
-    const htmlWrap = document.createElement('div');
-    htmlWrap.style.position = 'relative';
-    addCopyButton(htmlWrap, data.outerHTML, 'Copy HTML');
+    const htmlBox = document.createElement('div');
+    htmlBox.style.position = 'relative';
+    addCopyButton(htmlBox, data.outerHTML, 'Copy HTML');
     const htmlPre = document.createElement('pre');
     htmlPre.className = 'raw';
     htmlPre.textContent = data.outerHTML;
-    htmlWrap.appendChild(htmlPre);
-    inspectBodyEl.appendChild(htmlWrap);
+    htmlBox.appendChild(htmlPre);
+    htmlWrap.appendChild(htmlBox);
+    inspectBodyEl.appendChild(buildInspectSection('Outer HTML', false, htmlWrap));
+  }
+
+  function buildInspectSection(title, open, contentEl) {
+    const details = document.createElement('details');
+    details.className = 'storage-section';
+    details.open = open;
+    const summary = document.createElement('summary');
+    summary.textContent = title;
+    details.appendChild(summary);
+    details.appendChild(contentEl);
+    return details;
   }
 
   if (inspectBtn && inspectPanel) {
