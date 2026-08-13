@@ -15,7 +15,8 @@
       <span class="count" id="count">0</span>
     </div>
     <div class="controls">
-      <button id="storageBtn" class="icon-btn" title="View storage (localStorage, sessionStorage, cookies)" aria-label="View storage">🗄</button>
+      <button id="inspectBtn" class="icon-btn" title="Inspect an element on the page" aria-label="Inspect element">⌖</button>
+      <button id="storageBtn" class="icon-btn" title="View storage (sessionStorage, cookies)" aria-label="View storage">🗄</button>
       <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders">⚙</button>
       <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture">⏸</button>
       <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests">⌫</button>
@@ -36,6 +37,19 @@
       <input type="checkbox" id="showLogs" checked />
       <span>Console logs</span>
     </label>
+  </div>
+
+  <div id="inspectPanel" class="decoder-panel" hidden>
+    <div class="decoder-panel-head">
+      <span>Element Inspector</span>
+      <div class="detail-actions" style="padding:0;">
+        <button id="inspectPickBtn" class="mini-btn" type="button">Pick element</button>
+        <button id="inspectPanelClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div id="inspectBody" class="storage-sections">
+      <div class="note storage-empty">Click "Pick element", then hover and click anything on the page.</div>
+    </div>
   </div>
 
   <div id="storagePanel" class="decoder-panel" hidden>

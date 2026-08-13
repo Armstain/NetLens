@@ -1633,6 +1633,113 @@
     });
   }
 
+  // ------------------------------------------------------- element inspector
+  const inspectBtn = document.getElementById('inspectBtn');
+  const inspectPanel = document.getElementById('inspectPanel');
+  const inspectPanelClose = document.getElementById('inspectPanelClose');
+  const inspectPickBtn = document.getElementById('inspectPickBtn');
+  const inspectBodyEl = document.getElementById('inspectBody');
+
+  function renderInspectResult(data) {
+    if (!inspectBodyEl) return;
+    inspectBodyEl.textContent = '';
+
+    const header = document.createElement('div');
+    header.className = 'detail-url';
+    header.style.padding = '0';
+    const tag = `${data.tag}${data.id ? '#' + data.id : ''}${data.classes.length ? '.' + data.classes.join('.') : ''}`;
+    header.textContent = `${tag}  ${data.rect.width}×${data.rect.height}`;
+    inspectBodyEl.appendChild(header);
+
+    const selectorRow = document.createElement('div');
+    selectorRow.className = 'detail-actions';
+    selectorRow.style.padding = '8px 0 0';
+    selectorRow.style.alignItems = 'center';
+    const selectorText = document.createElement('code');
+    selectorText.className = 'raw';
+    selectorText.style.flex = '1';
+    selectorText.style.minWidth = '0';
+    selectorText.style.overflow = 'hidden';
+    selectorText.style.textOverflow = 'ellipsis';
+    selectorText.style.whiteSpace = 'nowrap';
+    selectorText.textContent = data.selector;
+    selectorRow.appendChild(selectorText);
+    addCopyButton(selectorRow, data.selector, 'Copy selector');
+    inspectBodyEl.appendChild(selectorRow);
+
+    const attrTitle = document.createElement('div');
+    attrTitle.className = 'decoded-section-title';
+    attrTitle.textContent = 'Attributes';
+    inspectBodyEl.appendChild(attrTitle);
+    const attrItems = Object.entries(data.attributes).map(([key, value]) => ({ key, value }));
+    inspectBodyEl.appendChild(attrItems.length ? buildDecodedTable(attrItems) : (() => {
+      const n = document.createElement('div'); n.className = 'note storage-empty'; n.textContent = 'No attributes.'; return n;
+    })());
+
+    const styleTitle = document.createElement('div');
+    styleTitle.className = 'decoded-section-title';
+    styleTitle.textContent = 'Computed style';
+    inspectBodyEl.appendChild(styleTitle);
+    inspectBodyEl.appendChild(buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value }))));
+
+    const htmlTitle = document.createElement('div');
+    htmlTitle.className = 'decoded-section-title';
+    htmlTitle.textContent = 'Outer HTML';
+    inspectBodyEl.appendChild(htmlTitle);
+    if (data.outerHTMLTruncated) {
+      const trunc = document.createElement('div');
+      trunc.className = 'trunc-note';
+      trunc.textContent = '⚠ Truncated at 20KB';
+      inspectBodyEl.appendChild(trunc);
+    }
+    const htmlWrap = document.createElement('div');
+    htmlWrap.style.position = 'relative';
+    addCopyButton(htmlWrap, data.outerHTML, 'Copy HTML');
+    const htmlPre = document.createElement('pre');
+    htmlPre.className = 'raw';
+    htmlPre.textContent = data.outerHTML;
+    htmlWrap.appendChild(htmlPre);
+    inspectBodyEl.appendChild(htmlWrap);
+  }
+
+  if (inspectBtn && inspectPanel) {
+    const setPicking = (on) => {
+      inspectBtn.classList.toggle('active', on);
+      inspectPickBtn.textContent = on ? 'Picking… (Esc to cancel)' : 'Pick element';
+    };
+
+    const startPicking = () => {
+      if (currentTabId == null) return;
+      setPicking(true);
+      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => { void chrome.runtime.lastError; });
+    };
+    const stopPicking = () => {
+      setPicking(false);
+      if (currentTabId != null) {
+        chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:stop' }, () => { void chrome.runtime.lastError; });
+      }
+    };
+
+    const openInspectPanel = () => { openSlidePanel(inspectPanel); startPicking(); };
+    const closeInspectPanel = () => { stopPicking(); closeSlidePanel(inspectPanel); };
+
+    inspectBtn.addEventListener('click', () => {
+      if (inspectPanel.hidden) openInspectPanel(); else closeInspectPanel();
+    });
+    inspectPanelClose.addEventListener('click', closeInspectPanel);
+    inspectPickBtn.addEventListener('click', startPicking);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !inspectPanel.hidden) { setPicking(false); }
+    });
+
+    chrome.runtime.onMessage.addListener((msg, sender) => {
+      if (!msg || msg.type !== 'netlens:inspect:result') return;
+      if (!sender.tab || sender.tab.id !== currentTabId) return;
+      setPicking(false);
+      renderInspectResult(msg.data);
+    });
+  }
+
   // ------------------------------------------------ custom decoder manager
   const decodersBtn = document.getElementById('decodersBtn');
   const decoderPanel = document.getElementById('decoderPanel');
