@@ -53,6 +53,101 @@
 
   const READABLE_CT = /json|text|xml|javascript|x-www-form-urlencoded/i;
 
+  // ------------------------------------------------------------------ logs
+  const LOG_RATE_LIMIT = 50; // per second
+  let logWindowStart = now();
+  let logWindowCount = 0;
+  let logsDropped = 0;
+
+  function safeStringify(val, depth = 4, seen) {
+    if (val instanceof Error) return `${val.message}\n${val.stack || ''}`;
+    if (typeof Element !== 'undefined' && val instanceof Element) return `[${val.tagName}]`;
+    if (typeof val === 'function') return `[Function ${val.name || 'anonymous'}]`;
+    if (typeof val !== 'object' || val === null) return val;
+    seen = seen || new WeakSet();
+    if (seen.has(val)) return '[Circular]';
+    if (depth <= 0) return Array.isArray(val) ? '[Array]' : '[Object]';
+    seen.add(val);
+    try {
+      if (Array.isArray(val)) return val.slice(0, 50).map((v) => safeStringify(v, depth - 1, seen));
+      const out = {};
+      let n = 0;
+      for (const k in val) {
+        if (++n > 50) { out['…'] = 'truncated'; break; }
+        out[k] = safeStringify(val[k], depth - 1, seen);
+      }
+      return out;
+    } catch {
+      try { return String(val); } catch { return '[Unserializable]'; }
+    }
+  }
+
+  function enqueueLog(level, args, extra) {
+    const t = now();
+    if (t - logWindowStart > 1000) {
+      if (logsDropped > 0) {
+        enqueue({ id: ++seq, kind: 'log', level: 'warn', message: `NetLens: ${logsDropped} log(s) dropped (rate limit)`, args: [], startedAt: Date.now() });
+      }
+      logWindowStart = t;
+      logWindowCount = 0;
+      logsDropped = 0;
+    }
+    logWindowCount++;
+    if (logWindowCount > LOG_RATE_LIMIT) { logsDropped++; return; }
+
+    let message;
+    try {
+      message = args.map((a) => {
+        if (typeof a === 'string') return a;
+        const s = safeStringify(a);
+        return typeof s === 'string' ? s : JSON.stringify(s);
+      }).join(' ');
+    } catch { message = '[unrenderable log]'; }
+
+    enqueue(Object.assign({
+      id: ++seq,
+      kind: 'log',
+      level,
+      message: truncate(message).body,
+      args: args.map((a) => safeStringify(a)),
+      startedAt: Date.now(),
+    }, extra));
+  }
+
+  const origConsoleError = console.error;
+  console.error = function (...args) {
+    try { origConsoleError.apply(console, args); } finally {
+      try { enqueueLog('error', args); } catch {}
+    }
+  };
+
+  const origConsoleWarn = console.warn;
+  console.warn = function (...args) {
+    try { origConsoleWarn.apply(console, args); } finally {
+      try { enqueueLog('warn', args); } catch {}
+    }
+  };
+
+  window.addEventListener('error', (e) => {
+    try {
+      const err = e.error;
+      enqueueLog('error', [err ? (err.message || String(err)) : e.message], {
+        stack: err && err.stack ? err.stack : null,
+        source: e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : null,
+      });
+    } catch {}
+  });
+
+  window.addEventListener('unhandledrejection', (e) => {
+    try {
+      const reason = e.reason;
+      const msg = reason instanceof Error ? reason.message : String(reason);
+      enqueueLog('error', [`Unhandled rejection: ${msg}`], {
+        stack: reason && reason.stack ? reason.stack : null,
+      });
+    } catch {}
+  });
+
   // ---------------------------------------------------------------- fetch
   const origFetch = window.fetch;
   window.fetch = function (input, init) {

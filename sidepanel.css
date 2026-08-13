@@ -144,6 +144,8 @@ body { display: flex; flex-direction: column; }
 .row.s2xx { border-left-color: var(--emerald-deep); }
 .row.s3xx { border-left-color: var(--amber); }
 .row.s4xx, .row.s5xx, .row.failed { border-left-color: var(--red); }
+.row.log-warn { border-left-color: var(--amber); }
+.row.log-error { border-left-color: var(--red); }
 
 .row-head {
   display: flex;
@@ -200,6 +202,13 @@ body { display: flex; flex-direction: column; }
   text-align: right;
   flex-shrink: 0;
 }
+
+.log-level-error { color: var(--red); }
+.log-level-warn { color: var(--amber); }
+.log-row .path { direction: ltr; text-align: left; }
+.log-detail-inner { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.log-stack { color: var(--muted); font-size: 11px; }
+.log-source { padding: 0; }
 
 /* --------------------------------------------------------------- details */
 .row-detail { display: none; background: var(--surface); border-top: 1px solid var(--border); }

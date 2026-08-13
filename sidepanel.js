@@ -820,7 +820,12 @@
   }
 
   function isError(d) {
+    if (d.kind === 'log') return d.level === 'error';
     return d.failed || d.status === 0 || d.status >= 400;
+  }
+
+  function isLog(d) {
+    return d.kind === 'log';
   }
 
   function isApi(d) {
@@ -1071,14 +1076,102 @@
   function bodyHay(d) {
     if (d.__bodyHay !== undefined) return d.__bodyHay;
     let hay = '';
-    if (typeof d.requestBody === 'string') hay += d.requestBody;
-    if (typeof d.responseBody === 'string') hay += '\n' + d.responseBody;
+    if (d.kind === 'log') {
+      hay = `${d.message || ''}\n${d.stack || ''}`;
+    } else {
+      if (typeof d.requestBody === 'string') hay += d.requestBody;
+      if (typeof d.responseBody === 'string') hay += '\n' + d.responseBody;
+    }
     d.__bodyHay = hay.slice(0, BODY_SEARCH_CAP).toLowerCase();
     return d.__bodyHay;
   }
 
   // ------------------------------------------------------------ row build
+  function buildLogRow(d) {
+    const row = document.createElement('div');
+    row.className = `row log-row log-${d.level}`;
+    row.dataset.hay = (d.message || '').toLowerCase();
+    row.dataset.err = d.level === 'error' ? '1' : '0';
+    row.dataset.api = '0';
+
+    const head = document.createElement('div');
+    head.className = 'row-head';
+    head.tabIndex = 0;
+    head.setAttribute('role', 'button');
+    head.setAttribute('aria-expanded', 'false');
+
+    const level = document.createElement('span');
+    level.className = `method log-level-${d.level}`;
+    level.textContent = d.level === 'error' ? 'ERR' : 'WARN';
+
+    const msg = document.createElement('span');
+    msg.className = 'path';
+    const bdo = document.createElement('bdo');
+    bdo.textContent = d.message || '';
+    msg.appendChild(bdo);
+    msg.title = d.message || '';
+
+    const time = document.createElement('span');
+    time.className = 'dur';
+    if (d.startedAt) {
+      time.textContent = new Date(d.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    head.append(level, msg, time);
+    row.appendChild(head);
+
+    const detail = document.createElement('div');
+    detail.className = 'row-detail';
+    row.appendChild(detail);
+
+    let built = false;
+    const toggle = () => {
+      const open = row.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+      if (open) {
+        if (!built) {
+          built = true;
+          buildLogDetail(detail, d);
+        }
+        const q = filterEl.value.trim().toLowerCase();
+        if (q) highlightMatches(detail, q, true);
+      }
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+
+    return row;
+  }
+
+  function buildLogDetail(container, d) {
+    const inner = document.createElement('div');
+    inner.className = 'log-detail-inner';
+
+    if (d.stack) {
+      const stackPre = document.createElement('pre');
+      stackPre.className = 'raw log-stack';
+      stackPre.textContent = d.stack;
+      inner.appendChild(stackPre);
+    }
+    if (d.source) {
+      const src = document.createElement('div');
+      src.className = 'detail-url log-source';
+      src.textContent = d.source;
+      inner.appendChild(src);
+    }
+    if (Array.isArray(d.args) && d.args.length) {
+      const tree = document.createElement('div');
+      tree.className = 'jtree log-args';
+      tree.appendChild(jsonNode(null, d.args.length === 1 ? d.args[0] : d.args, true));
+      inner.appendChild(tree);
+    }
+    container.appendChild(inner);
+  }
+
   function buildRow(d) {
+    if (isLog(d)) return buildLogRow(d);
     const row = document.createElement('div');
     row.className = `row ${statusClass(d)}`;
     row.dataset.hay = `${d.method} ${d.url}`.toLowerCase();
