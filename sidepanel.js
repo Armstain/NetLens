@@ -311,7 +311,9 @@
       } },
     { id: 'lzstring', label: 'LZString', auto: true, fn: (v) => {
         const d = LZString.decompressFromEncodedURIComponent(v);
-        return d ? tryJsonValue(d) : null;
+        if (!d) return null;
+        const parsed = tryJsonValue(d);
+        return (typeof parsed === 'string' && !isMostlyPrintable(parsed)) ? null : parsed;
       } },
     { id: 'jwt', label: 'JWT', auto: true, fn: jwtDecode },
     { id: 'unicodeEscape', label: 'Unicode Escape', auto: true, fn: unicodeEscapeDecode },
