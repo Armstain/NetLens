@@ -1,5 +1,8 @@
 
 (() => {
+  if (window.__netlens_content_installed) return;
+  window.__netlens_content_installed = true;
+
   const RING_SIZE = 200;
   let buffer = [];
 

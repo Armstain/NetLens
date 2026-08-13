@@ -1766,10 +1766,21 @@
       if (currentTabId == null) return;
       setPicking(true);
       chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => {
-        if (chrome.runtime.lastError) {
-          setPicking(false);
-          showInspectError('Could not reach this page — reload the tab (not just the extension) and try again.');
-        }
+        if (!chrome.runtime.lastError) return;
+        // Stale content script (e.g. the extension was reloaded after this tab opened) — reinject and retry once.
+        chrome.scripting.executeScript({ target: { tabId: currentTabId }, files: ['content.js'] }, () => {
+          if (chrome.runtime.lastError) {
+            setPicking(false);
+            showInspectError('Could not reach this page — reload the tab and try again.');
+            return;
+          }
+          chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => {
+            if (chrome.runtime.lastError) {
+              setPicking(false);
+              showInspectError('Could not reach this page — reload the tab and try again.');
+            }
+          });
+        });
       });
     };
     const stopPicking = () => {
