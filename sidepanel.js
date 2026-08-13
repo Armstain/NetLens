@@ -1494,6 +1494,8 @@
       if (chrome.runtime.lastError || !tab) return;
       currentTabUrl = tab.url;
       requestDump(tabId);
+      const panel = document.getElementById('storagePanel');
+      if (panel && !panel.hidden) loadStorage();
     });
   }
 
@@ -1532,6 +1534,141 @@
   });
 
   clearBtn.addEventListener('click', () => clearAll(true));
+
+  // -------------------------------------------------------- storage viewer
+  const storageBtn = document.getElementById('storageBtn');
+  const storagePanel = document.getElementById('storagePanel');
+  const storagePanelClose = document.getElementById('storagePanelClose');
+  const storageRefreshBtn = document.getElementById('storageRefreshBtn');
+  const storageSectionsEl = document.getElementById('storageSections');
+  const storageOriginEl = document.getElementById('storageOrigin');
+
+  function buildStorageSection(title, items) {
+    const details = document.createElement('details');
+    details.className = 'storage-section';
+    details.open = items.length > 0;
+    const summary = document.createElement('summary');
+    summary.textContent = `${title} (${items.length})`;
+    details.appendChild(summary);
+
+    if (!items.length) {
+      const note = document.createElement('div');
+      note.className = 'note storage-empty';
+      note.textContent = 'No entries.';
+      details.appendChild(note);
+      return details;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'kv decoded-table';
+    for (const item of items) {
+      const tr = document.createElement('tr');
+      const tdKey = document.createElement('td');
+      tdKey.className = 'decoded-key-cell';
+      tdKey.textContent = item.key;
+      if (item.hint) tdKey.title = item.hint;
+
+      const tdVal = document.createElement('td');
+      tdVal.className = 'decoded-val-cell';
+      const pre = document.createElement('pre');
+      pre.className = 'raw';
+      pre.textContent = item.value == null ? '' : String(item.value);
+      tdVal.appendChild(pre);
+
+      const decoded = tryDecodeStructure(item.value);
+      if (decoded) {
+        const badge = document.createElement('div');
+        badge.className = 'decoded-method-label';
+        badge.textContent = `↳ ${decoded.method}`;
+        tdVal.appendChild(badge);
+        if (typeof decoded.value === 'object' && decoded.value !== null) {
+          const tree = document.createElement('div');
+          tree.className = 'jtree';
+          const root = jsonNode(null, decoded.value, true);
+          if (root.tagName === 'DETAILS') root.open = true;
+          tree.appendChild(root);
+          tdVal.appendChild(tree);
+        } else {
+          const decPre = document.createElement('pre');
+          decPre.className = 'raw';
+          decPre.textContent = String(decoded.value);
+          tdVal.appendChild(decPre);
+        }
+      }
+
+      tr.append(tdKey, tdVal);
+      table.appendChild(tr);
+    }
+    details.appendChild(table);
+    return details;
+  }
+
+  function loadStorage() {
+    if (!storageSectionsEl) return;
+    storageSectionsEl.textContent = '';
+    const loading = document.createElement('div');
+    loading.className = 'note storage-empty';
+    loading.textContent = 'Loading…';
+    storageSectionsEl.appendChild(loading);
+
+    if (storageOriginEl) {
+      try { storageOriginEl.textContent = currentTabUrl ? new URL(currentTabUrl).origin : ''; }
+      catch { storageOriginEl.textContent = currentTabUrl || ''; }
+    }
+
+    if (currentTabId == null) {
+      storageSectionsEl.textContent = '';
+      const note = document.createElement('div');
+      note.className = 'note storage-empty';
+      note.textContent = 'No active tab.';
+      storageSectionsEl.appendChild(note);
+      return;
+    }
+
+    let localItems = [], sessionItems = [], cookieItems = [];
+    let pending = 2;
+    const finish = () => {
+      if (--pending > 0) return;
+      storageSectionsEl.textContent = '';
+      storageSectionsEl.appendChild(buildStorageSection('Local Storage', localItems));
+      storageSectionsEl.appendChild(buildStorageSection('Session Storage', sessionItems));
+      storageSectionsEl.appendChild(buildStorageSection('Cookies', cookieItems));
+    };
+
+    chrome.tabs.sendMessage(currentTabId, { type: 'netlens:storage:get' }, (res) => {
+      void chrome.runtime.lastError;
+      if (res) {
+        localItems = Object.entries(res.local || {}).map(([key, value]) => ({ key, value }));
+        sessionItems = Object.entries(res.session || {}).map(([key, value]) => ({ key, value }));
+      }
+      finish();
+    });
+
+    try {
+      chrome.cookies.getAll({ url: currentTabUrl }, (cookies) => {
+        cookieItems = (cookies || []).map((c) => ({
+          key: c.name,
+          value: c.value,
+          hint: `${c.domain}${c.path}${c.httpOnly ? ' · HttpOnly' : ''}${c.secure ? ' · Secure' : ''}`,
+        }));
+        finish();
+      });
+    } catch { finish(); }
+  }
+
+  if (storageBtn && storagePanel) {
+    const openStoragePanel = () => { storagePanel.hidden = false; loadStorage(); };
+    const closeStoragePanel = () => { storagePanel.hidden = true; };
+
+    storageBtn.addEventListener('click', () => {
+      if (storagePanel.hidden) openStoragePanel(); else closeStoragePanel();
+    });
+    storagePanelClose.addEventListener('click', closeStoragePanel);
+    storageRefreshBtn.addEventListener('click', loadStorage);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !storagePanel.hidden) closeStoragePanel();
+    });
+  }
 
   // ------------------------------------------------ custom decoder manager
   const decodersBtn = document.getElementById('decodersBtn');

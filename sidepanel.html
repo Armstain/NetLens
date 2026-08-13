@@ -15,6 +15,7 @@
       <span class="count" id="count">0</span>
     </div>
     <div class="controls">
+      <button id="storageBtn" class="icon-btn" title="View storage (localStorage, sessionStorage, cookies)" aria-label="View storage">🗄</button>
       <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders">⚙</button>
       <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture">⏸</button>
       <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests">⌫</button>
@@ -31,6 +32,17 @@
       <input type="checkbox" id="apiOnly" />
       <span>API only</span>
     </label>
+  </div>
+
+  <div id="storagePanel" class="decoder-panel" hidden>
+    <div class="decoder-panel-head">
+      <span>Storage — <span id="storageOrigin"></span></span>
+      <div class="detail-actions" style="padding:0;">
+        <button id="storageRefreshBtn" class="mini-btn" type="button">Refresh</button>
+        <button id="storagePanelClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div id="storageSections" class="storage-sections"></div>
   </div>
 
   <div id="decoderPanel" class="decoder-panel" hidden>

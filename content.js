@@ -29,5 +29,22 @@
       buffer = [];
       sendResponse({ ok: true });
     }
+    if (msg.type === 'netlens:storage:get') {
+      const readStore = (store) => {
+        const out = {};
+        try {
+          for (let i = 0; i < store.length; i++) {
+            const key = store.key(i);
+            out[key] = store.getItem(key);
+          }
+        } catch {}
+        return out;
+      };
+      let local = {}, session = {};
+      try { local = readStore(window.localStorage); } catch {}
+      try { session = readStore(window.sessionStorage); } catch {}
+      sendResponse({ local, session });
+      return;
+    }
   });
 })();
