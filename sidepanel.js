@@ -1708,10 +1708,24 @@
       inspectPickBtn.textContent = on ? 'Picking… (Esc to cancel)' : 'Pick element';
     };
 
+    const showInspectError = (msg) => {
+      if (!inspectBodyEl) return;
+      inspectBodyEl.textContent = '';
+      const note = document.createElement('div');
+      note.className = 'manual-error';
+      note.textContent = msg;
+      inspectBodyEl.appendChild(note);
+    };
+
     const startPicking = () => {
       if (currentTabId == null) return;
       setPicking(true);
-      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => { void chrome.runtime.lastError; });
+      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => {
+        if (chrome.runtime.lastError) {
+          setPicking(false);
+          showInspectError('Could not reach this page — reload the tab (not just the extension) and try again.');
+        }
+      });
     };
     const stopPicking = () => {
       setPicking(false);
