@@ -1017,7 +1017,8 @@
       e.stopPropagation();
       navigator.clipboard.writeText(text).then(() => {
         btn.textContent = 'Copied';
-        setTimeout(() => { btn.textContent = label; }, 1200);
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1200);
       });
     });
     container.appendChild(btn);
@@ -1610,9 +1611,19 @@
     });
   }
 
+  const PANEL_ANIM_MS = 180;
+  function openSlidePanel(panel) {
+    panel.hidden = false;
+    requestAnimationFrame(() => panel.classList.add('panel-open'));
+  }
+  function closeSlidePanel(panel) {
+    panel.classList.remove('panel-open');
+    setTimeout(() => { panel.hidden = true; }, PANEL_ANIM_MS);
+  }
+
   if (storageBtn && storagePanel) {
-    const openStoragePanel = () => { storagePanel.hidden = false; loadStorage(); };
-    const closeStoragePanel = () => { storagePanel.hidden = true; };
+    const openStoragePanel = () => { openSlidePanel(storagePanel); loadStorage(); };
+    const closeStoragePanel = () => closeSlidePanel(storagePanel);
 
     storageBtn.addEventListener('click', () => {
       if (storagePanel.hidden) openStoragePanel(); else closeStoragePanel();
@@ -1685,9 +1696,9 @@
 
     const openPanel = () => {
       renderDecoderList();
-      decoderPanel.hidden = false;
+      openSlidePanel(decoderPanel);
     };
-    const closePanel = () => { decoderPanel.hidden = true; };
+    const closePanel = () => closeSlidePanel(decoderPanel);
 
     decodersBtn.addEventListener('click', () => {
       if (decoderPanel.hidden) openPanel(); else closePanel();

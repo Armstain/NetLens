@@ -15,6 +15,7 @@
   --red: #f85149;
   --mono: ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: -apple-system, "Segoe UI", system-ui, Roboto, sans-serif;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -88,8 +89,10 @@ body { display: flex; flex-direction: column; }
   line-height: 1;
   padding: 5px 8px;
   cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 120ms ease-out;
 }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.icon-btn:active { transform: scale(0.92); }
 .icon-btn:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
 .icon-btn.active { color: var(--amber); border-color: var(--amber); }
 
@@ -154,6 +157,7 @@ body { display: flex; flex-direction: column; }
   padding: 7px 10px;
   cursor: pointer;
   min-width: 0;
+  transition: background-color 100ms ease;
 }
 .row-head:hover { background: var(--surface); }
 .row-head:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
@@ -247,6 +251,7 @@ body { display: flex; flex-direction: column; }
   font-size: 11px;
   padding: 5px 10px;
   cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
 }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--indigo); border-bottom-color: var(--indigo); }
@@ -272,8 +277,11 @@ body { display: flex; flex-direction: column; }
   padding: 3px 8px;
   cursor: pointer;
   z-index: 1;
+  transition: color 120ms ease, border-color 120ms ease, transform 120ms ease-out;
 }
 .copy-btn:hover { color: var(--text); border-color: var(--indigo); }
+.copy-btn:active { transform: scale(0.94); }
+.copy-btn.copied { color: var(--emerald); border-color: var(--emerald-deep); }
 
 .raw {
   font-family: var(--mono);
@@ -329,6 +337,8 @@ body { display: flex; flex-direction: column; }
 
 @media (prefers-reduced-motion: reduce) {
   .pulse { transition: none; }
+  .icon-btn, .copy-btn, .mini-btn { transform: none !important; transition-property: color, background-color, border-color; }
+  .decoder-panel { transform: none !important; transition-property: opacity; }
 }
 
 /* ----------------------------------------------------------- session history */
@@ -547,8 +557,10 @@ mark.hl {
   font-size: 11px;
   padding: 4px 10px;
   cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, transform 120ms ease-out;
 }
 .mini-btn:hover { color: var(--text); border-color: var(--indigo); }
+.mini-btn:active:not(:disabled) { transform: scale(0.96); }
 .mini-btn:disabled { opacity: 0.5; cursor: default; }
 .mini-btn.danger:hover { color: var(--red); border-color: var(--red); }
 
@@ -560,6 +572,13 @@ mark.hl {
   max-height: 60vh;
   overflow: auto;
   flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+.decoder-panel.panel-open {
+  opacity: 1;
+  transform: translateY(0);
 }
 .decoder-panel-head {
   display: flex;
