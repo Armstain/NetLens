@@ -42,6 +42,38 @@
     el.append(label, urlSpan, timeSpan);
   }
 
+  function renderValueNode(value) {
+    if (typeof value === 'object' && value !== null) {
+      const tree = document.createElement('div');
+      tree.className = 'jtree';
+      const root = jsonNode(null, value, true);
+      if (root.tagName === 'DETAILS') root.open = true;
+      tree.appendChild(root);
+      return tree;
+    }
+    const pre = document.createElement('pre');
+    pre.className = 'raw';
+    pre.textContent = String(value);
+    return pre;
+  }
+
+  function buildDecodedTable(items) {
+    const table = document.createElement('table');
+    table.className = 'kv decoded-table';
+    for (const item of items) {
+      const tr = document.createElement('tr');
+      const tdKey = document.createElement('td');
+      tdKey.className = 'decoded-key-cell';
+      tdKey.textContent = item.key;
+      const tdVal = document.createElement('td');
+      tdVal.className = 'decoded-val-cell';
+      tdVal.appendChild(renderValueNode(item.value));
+      tr.append(tdKey, tdVal);
+      table.appendChild(tr);
+    }
+    return table;
+  }
+
   function addSessionDecodedIfAny(containerEl, url) {
     const existing = containerEl.querySelector('.session-decoded');
     if (existing) existing.remove();
@@ -82,34 +114,7 @@
           title.className = 'decoded-section-title';
           title.textContent = 'Query Parameters';
           inner.appendChild(title);
-          
-          const table = document.createElement('table');
-          table.className = 'kv decoded-table';
-          for (const item of decodedParams) {
-            const tr = document.createElement('tr');
-            const tdKey = document.createElement('td');
-            tdKey.className = 'decoded-key-cell';
-            tdKey.textContent = item.key;
-            
-            const tdVal = document.createElement('td');
-            tdVal.className = 'decoded-val-cell';
-            if (typeof item.value === 'object' && item.value !== null) {
-              const tree = document.createElement('div');
-              tree.className = 'jtree';
-              const root = jsonNode(null, item.value, true);
-              if (root.tagName === 'DETAILS') root.open = true;
-              tree.appendChild(root);
-              tdVal.appendChild(tree);
-            } else {
-              const pre = document.createElement('pre');
-              pre.className = 'raw';
-              pre.textContent = String(item.value);
-              tdVal.appendChild(pre);
-            }
-            tr.append(tdKey, tdVal);
-            table.appendChild(tr);
-          }
-          inner.appendChild(table);
+          inner.appendChild(buildDecodedTable(decodedParams));
         }
 
         if (decodedSegments.length > 0) {
@@ -117,34 +122,7 @@
           title.className = 'decoded-section-title';
           title.textContent = 'URL Path Segments';
           inner.appendChild(title);
-          
-          const table = document.createElement('table');
-          table.className = 'kv decoded-table';
-          for (const item of decodedSegments) {
-            const tr = document.createElement('tr');
-            const tdKey = document.createElement('td');
-            tdKey.className = 'decoded-key-cell';
-            tdKey.textContent = item.key;
-            
-            const tdVal = document.createElement('td');
-            tdVal.className = 'decoded-val-cell';
-            if (typeof item.value === 'object' && item.value !== null) {
-              const tree = document.createElement('div');
-              tree.className = 'jtree';
-              const root = jsonNode(null, item.value, true);
-              if (root.tagName === 'DETAILS') root.open = true;
-              tree.appendChild(root);
-              tdVal.appendChild(tree);
-            } else {
-              const pre = document.createElement('pre');
-              pre.className = 'raw';
-              pre.textContent = String(item.value);
-              tdVal.appendChild(pre);
-            }
-            tr.append(tdKey, tdVal);
-            table.appendChild(tr);
-          }
-          inner.appendChild(table);
+          inner.appendChild(buildDecodedTable(decodedSegments));
         }
 
         details.appendChild(inner);
@@ -1087,6 +1065,26 @@
   }
 
   // ------------------------------------------------------------ row build
+  function attachRowToggle(row, head, detail, buildDetailFn) {
+    let built = false;
+    const toggle = () => {
+      const open = row.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+      if (open) {
+        if (!built) {
+          built = true;
+          buildDetailFn();
+        }
+        const q = filterEl.value.trim().toLowerCase();
+        if (q) highlightMatches(detail, q, true);
+      }
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  }
+
   function buildLogRow(d) {
     const row = document.createElement('div');
     row.className = `row log-row log-${d.level}`;
@@ -1124,23 +1122,7 @@
     detail.className = 'row-detail';
     row.appendChild(detail);
 
-    let built = false;
-    const toggle = () => {
-      const open = row.classList.toggle('open');
-      head.setAttribute('aria-expanded', String(open));
-      if (open) {
-        if (!built) {
-          built = true;
-          buildLogDetail(detail, d);
-        }
-        const q = filterEl.value.trim().toLowerCase();
-        if (q) highlightMatches(detail, q, true);
-      }
-    };
-    head.addEventListener('click', toggle);
-    head.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    });
+    attachRowToggle(row, head, detail, () => buildLogDetail(detail, d));
 
     return row;
   }
@@ -1212,23 +1194,7 @@
     detail.className = 'row-detail';
     row.appendChild(detail);
 
-    let built = false;
-    const toggle = () => {
-      const open = row.classList.toggle('open');
-      head.setAttribute('aria-expanded', String(open));
-      if (open) {
-        if (!built) {
-          built = true;
-          buildDetail(detail, d);
-        }
-        const q = filterEl.value.trim().toLowerCase();
-        if (q) highlightMatches(detail, q, true);
-      }
-    };
-    head.addEventListener('click', toggle);
-    head.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    });
+    attachRowToggle(row, head, detail, () => buildDetail(detail, d));
 
     return row;
   }
@@ -1581,19 +1547,7 @@
         badge.className = 'decoded-method-label';
         badge.textContent = `↳ ${decoded.method}`;
         tdVal.appendChild(badge);
-        if (typeof decoded.value === 'object' && decoded.value !== null) {
-          const tree = document.createElement('div');
-          tree.className = 'jtree';
-          const root = jsonNode(null, decoded.value, true);
-          if (root.tagName === 'DETAILS') root.open = true;
-          tree.appendChild(root);
-          tdVal.appendChild(tree);
-        } else {
-          const decPre = document.createElement('pre');
-          decPre.className = 'raw';
-          decPre.textContent = String(decoded.value);
-          tdVal.appendChild(decPre);
-        }
+        tdVal.appendChild(renderValueNode(decoded.value));
       }
 
       tr.append(tdKey, tdVal);
@@ -1625,10 +1579,7 @@
       return;
     }
 
-    let localItems = [], sessionItems = [], cookieItems = [];
-    let pending = 2;
-    const finish = () => {
-      if (--pending > 0) return;
+    const finish = (localItems, sessionItems, cookieItems) => {
       storageSectionsEl.textContent = '';
       storageSectionsEl.appendChild(buildStorageSection('Local Storage', localItems));
       storageSectionsEl.appendChild(buildStorageSection('Session Storage', sessionItems));
@@ -1637,23 +1588,20 @@
 
     chrome.tabs.sendMessage(currentTabId, { type: 'netlens:storage:get' }, (res) => {
       void chrome.runtime.lastError;
-      if (res) {
-        localItems = Object.entries(res.local || {}).map(([key, value]) => ({ key, value }));
-        sessionItems = Object.entries(res.session || {}).map(([key, value]) => ({ key, value }));
-      }
-      finish();
-    });
+      const localItems = Object.entries(res?.local || {}).map(([key, value]) => ({ key, value }));
+      const sessionItems = Object.entries(res?.session || {}).map(([key, value]) => ({ key, value }));
 
-    try {
-      chrome.cookies.getAll({ url: currentTabUrl }, (cookies) => {
-        cookieItems = (cookies || []).map((c) => ({
-          key: c.name,
-          value: c.value,
-          hint: `${c.domain}${c.path}${c.httpOnly ? ' · HttpOnly' : ''}${c.secure ? ' · Secure' : ''}`,
-        }));
-        finish();
-      });
-    } catch { finish(); }
+      try {
+        chrome.cookies.getAll({ url: currentTabUrl }, (cookies) => {
+          const cookieItems = (cookies || []).map((c) => ({
+            key: c.name,
+            value: c.value,
+            hint: `${c.domain}${c.path}${c.httpOnly ? ' · HttpOnly' : ''}${c.secure ? ' · Secure' : ''}`,
+          }));
+          finish(localItems, sessionItems, cookieItems);
+        });
+      } catch { finish(localItems, sessionItems, []); }
+    });
   }
 
   if (storageBtn && storagePanel) {
