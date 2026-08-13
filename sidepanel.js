@@ -11,6 +11,7 @@
   const filterEl = document.getElementById('filter');
   const errorsOnlyEl = document.getElementById('errorsOnly');
   const apiOnlyEl = document.getElementById('apiOnly');
+  const showLogsEl = document.getElementById('showLogs');
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
 
@@ -1351,11 +1352,13 @@
     const q = filterEl.value.trim().toLowerCase();
     const errOnly = errorsOnlyEl.checked;
     const apiOnly = apiOnlyEl.checked;
+    const showLogs = showLogsEl.checked;
     for (const { data, el } of entries) {
       const matchesText =
         !q || el.dataset.hay.includes(q) || bodyHay(data).includes(q);
       const matches =
-        matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1');
+        matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1') &&
+        (showLogs || data.kind !== 'log');
       el.style.display = matches ? '' : 'none';
 
       const pathBdo = el.querySelector('.path bdo');
@@ -1391,6 +1394,7 @@
   filterEl.addEventListener('input', scheduleFilter);
   errorsOnlyEl.addEventListener('change', applyFilter);
   apiOnlyEl.addEventListener('change', applyFilter);
+  showLogsEl.addEventListener('change', applyFilter);
 
   // ------------------------------------------------------------- ingest
   function addEntries(batch) {
