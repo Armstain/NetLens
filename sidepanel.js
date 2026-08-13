@@ -1651,60 +1651,31 @@
     header.textContent = `${tag}  ${data.rect.width}×${data.rect.height}`;
     inspectBodyEl.appendChild(header);
 
-    const selectorRow = document.createElement('div');
-    selectorRow.className = 'detail-actions';
-    selectorRow.style.padding = '0';
-    selectorRow.style.alignItems = 'center';
-    const selectorText = document.createElement('code');
-    selectorText.className = 'raw';
-    selectorText.style.flex = '1';
-    selectorText.style.minWidth = '0';
-    selectorText.style.overflow = 'hidden';
-    selectorText.style.textOverflow = 'ellipsis';
-    selectorText.style.whiteSpace = 'nowrap';
-    selectorText.textContent = data.selector;
-    selectorRow.appendChild(selectorText);
-    addCopyButton(selectorRow, data.selector, 'Copy selector');
-    inspectBodyEl.appendChild(buildInspectSection('Selector', true, selectorRow));
+    const classesRow = document.createElement('div');
+    classesRow.className = 'detail-actions';
+    classesRow.style.padding = '0';
+    classesRow.style.alignItems = 'center';
+    if (data.classes.length) {
+      const classesText = document.createElement('code');
+      classesText.className = 'raw';
+      classesText.style.flex = '1';
+      classesText.style.minWidth = '0';
+      classesText.style.overflow = 'hidden';
+      classesText.style.textOverflow = 'ellipsis';
+      classesText.style.whiteSpace = 'nowrap';
+      classesText.textContent = data.classes.join(' ');
+      classesRow.appendChild(classesText);
+      addCopyButton(classesRow, data.classes.join(' '), 'Copy classes');
+    } else {
+      const note = document.createElement('div');
+      note.className = 'note storage-empty';
+      note.textContent = 'No classes.';
+      classesRow.appendChild(note);
+    }
+    inspectBodyEl.appendChild(buildInspectSection('Classes', true, classesRow));
 
     inspectBodyEl.appendChild(buildInspectSection('Computed style', true,
       buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value })))));
-
-    const rulesWrap = document.createElement('div');
-    if (data.blockedSheets) {
-      const note = document.createElement('div');
-      note.className = 'note';
-      note.textContent = `${data.blockedSheets} stylesheet(s) couldn't be read (cross-origin).`;
-      rulesWrap.appendChild(note);
-    }
-    if (!data.matchedRules || !data.matchedRules.length) {
-      const note = document.createElement('div');
-      note.className = 'note storage-empty';
-      note.textContent = 'No matched CSS rules.';
-      rulesWrap.appendChild(note);
-    } else {
-      for (const rule of data.matchedRules) {
-        const block = document.createElement('div');
-        block.style.marginBottom = '10px';
-
-        const sourceLabel = document.createElement('div');
-        sourceLabel.className = 'decoded-method-label';
-        sourceLabel.style.display = 'block';
-        sourceLabel.style.width = 'fit-content';
-        sourceLabel.style.marginBottom = '4px';
-        sourceLabel.textContent = rule.source;
-        block.appendChild(sourceLabel);
-
-        const decls = rule.declarations.map((d) => `  ${d.prop}: ${d.value}${d.important ? ' !important' : ''};`).join('\n');
-        const pre = document.createElement('pre');
-        pre.className = 'raw';
-        pre.textContent = `${rule.selector} {\n${decls}\n}`;
-        block.appendChild(pre);
-
-        rulesWrap.appendChild(block);
-      }
-    }
-    inspectBodyEl.appendChild(buildInspectSection('Matched CSS rules', false, rulesWrap));
 
     const htmlWrap = document.createElement('div');
     if (data.outerHTMLTruncated) {
