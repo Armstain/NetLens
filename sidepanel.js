@@ -1586,16 +1586,14 @@
       return;
     }
 
-    const finish = (localItems, sessionItems, cookieItems) => {
+    const finish = (sessionItems, cookieItems) => {
       storageSectionsEl.textContent = '';
-      storageSectionsEl.appendChild(buildStorageSection('Local Storage', localItems));
       storageSectionsEl.appendChild(buildStorageSection('Session Storage', sessionItems));
       storageSectionsEl.appendChild(buildStorageSection('Cookies', cookieItems));
     };
 
     chrome.tabs.sendMessage(currentTabId, { type: 'netlens:storage:get' }, (res) => {
       void chrome.runtime.lastError;
-      const localItems = Object.entries(res?.local || {}).map(([key, value]) => ({ key, value }));
       const sessionItems = Object.entries(res?.session || {}).map(([key, value]) => ({ key, value }));
 
       try {
@@ -1605,9 +1603,9 @@
             value: c.value,
             hint: `${c.domain}${c.path}${c.httpOnly ? ' · HttpOnly' : ''}${c.secure ? ' · Secure' : ''}`,
           }));
-          finish(localItems, sessionItems, cookieItems);
+          finish(sessionItems, cookieItems);
         });
-      } catch { finish(localItems, sessionItems, []); }
+      } catch { finish(sessionItems, []); }
     });
   }
 

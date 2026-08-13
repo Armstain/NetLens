@@ -40,10 +40,9 @@
         } catch {}
         return out;
       };
-      let local = {}, session = {};
-      try { local = readStore(window.localStorage); } catch {}
+      let session = {};
       try { session = readStore(window.sessionStorage); } catch {}
-      sendResponse({ local, session });
+      sendResponse({ session });
       return;
     }
   });
