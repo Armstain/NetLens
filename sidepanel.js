@@ -1670,6 +1670,42 @@
     inspectBodyEl.appendChild(buildInspectSection('Computed style', true,
       buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value })))));
 
+    const rulesWrap = document.createElement('div');
+    if (data.blockedSheets) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = `${data.blockedSheets} stylesheet(s) couldn't be read (cross-origin).`;
+      rulesWrap.appendChild(note);
+    }
+    if (!data.matchedRules || !data.matchedRules.length) {
+      const note = document.createElement('div');
+      note.className = 'note storage-empty';
+      note.textContent = 'No matched CSS rules.';
+      rulesWrap.appendChild(note);
+    } else {
+      for (const rule of data.matchedRules) {
+        const block = document.createElement('div');
+        block.style.marginBottom = '10px';
+
+        const sourceLabel = document.createElement('div');
+        sourceLabel.className = 'decoded-method-label';
+        sourceLabel.style.display = 'block';
+        sourceLabel.style.width = 'fit-content';
+        sourceLabel.style.marginBottom = '4px';
+        sourceLabel.textContent = rule.source;
+        block.appendChild(sourceLabel);
+
+        const decls = rule.declarations.map((d) => `  ${d.prop}: ${d.value}${d.important ? ' !important' : ''};`).join('\n');
+        const pre = document.createElement('pre');
+        pre.className = 'raw';
+        pre.textContent = `${rule.selector} {\n${decls}\n}`;
+        block.appendChild(pre);
+
+        rulesWrap.appendChild(block);
+      }
+    }
+    inspectBodyEl.appendChild(buildInspectSection('Matched CSS rules', false, rulesWrap));
+
     const htmlWrap = document.createElement('div');
     if (data.outerHTMLTruncated) {
       const trunc = document.createElement('div');
@@ -1680,12 +1716,53 @@
     const htmlBox = document.createElement('div');
     htmlBox.style.position = 'relative';
     addCopyButton(htmlBox, data.outerHTML, 'Copy HTML');
-    const htmlPre = document.createElement('pre');
-    htmlPre.className = 'raw';
-    htmlPre.textContent = data.outerHTML;
-    htmlBox.appendChild(htmlPre);
+
+    const prettyPre = document.createElement('pre');
+    prettyPre.className = 'raw';
+    prettyPre.textContent = prettyHtml(data.outerHTML);
+
+    const rawPre = document.createElement('pre');
+    rawPre.className = 'raw';
+    rawPre.textContent = data.outerHTML;
+    rawPre.hidden = true;
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'copy-btn raw-toggle-btn';
+    toggleBtn.textContent = 'Raw';
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const showingRaw = !rawPre.hidden;
+      rawPre.hidden = showingRaw;
+      prettyPre.hidden = !showingRaw;
+      toggleBtn.textContent = showingRaw ? 'Raw' : 'Pretty';
+    });
+
+    htmlBox.append(toggleBtn, prettyPre, rawPre);
     htmlWrap.appendChild(htmlBox);
     inspectBodyEl.appendChild(buildInspectSection('Outer HTML', false, htmlWrap));
+  }
+
+  function prettyHtml(html) {
+    const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+    const tokens = html.match(/<[^>]+>|[^<]+/g) || [];
+    let depth = 0;
+    const lines = [];
+    for (const raw of tokens) {
+      const token = raw.trim();
+      if (!token) continue;
+      if (token.startsWith('</')) {
+        depth = Math.max(0, depth - 1);
+        lines.push('  '.repeat(depth) + token);
+      } else if (token.startsWith('<')) {
+        lines.push('  '.repeat(depth) + token);
+        const tagName = (token.match(/^<([a-zA-Z0-9-]+)/) || [])[1];
+        const selfClosing = token.endsWith('/>') || (tagName && VOID_TAGS.has(tagName.toLowerCase()));
+        if (!selfClosing) depth++;
+      } else {
+        lines.push('  '.repeat(depth) + token);
+      }
+    }
+    return lines.join('\n');
   }
 
   function buildInspectSection(title, open, contentEl) {

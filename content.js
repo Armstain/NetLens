@@ -116,12 +116,57 @@
 
   const COMPUTED_KEYS = ['display', 'position', 'color', 'backgroundColor', 'fontSize', 'fontFamily', 'padding', 'margin', 'border', 'boxSizing'];
 
+  function declarationsOf(style) {
+    const decls = [];
+    for (let i = 0; i < style.length; i++) {
+      const prop = style[i];
+      decls.push({ prop, value: style.getPropertyValue(prop), important: !!style.getPropertyPriority(prop) });
+    }
+    return decls;
+  }
+
+  function sheetLabel(sheet) {
+    if (!sheet.href) return sheet.ownerNode && sheet.ownerNode.tagName === 'STYLE' ? '<style>' : 'inline';
+    try { return new URL(sheet.href).pathname.split('/').pop() || sheet.href; } catch { return sheet.href; }
+  }
+
+  function collectMatchedRules(el) {
+    const matched = [];
+    let blockedSheets = 0;
+
+    const walk = (rules, label) => {
+      for (const rule of rules) {
+        if (rule.type === CSSRule.STYLE_RULE) {
+          try {
+            if (el.matches(rule.selectorText)) {
+              matched.push({ selector: rule.selectorText, source: label, declarations: declarationsOf(rule.style) });
+            }
+          } catch {}
+        } else if (rule.cssRules) {
+          try { walk(rule.cssRules, label); } catch {}
+        }
+      }
+    };
+
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules; } catch { blockedSheets++; continue; }
+      if (rules) walk(rules, sheetLabel(sheet));
+    }
+
+    const inlineStyle = el.getAttribute('style');
+    if (inlineStyle) matched.unshift({ selector: 'element.style', source: 'inline', declarations: declarationsOf(el.style) });
+
+    return { matched, blockedSheets };
+  }
+
   function serializeElement(el) {
     const rect = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
     const computed = {};
     for (const k of COMPUTED_KEYS) computed[k] = cs[k];
     const outerHTML = el.outerHTML || '';
+    const { matched, blockedSheets } = collectMatchedRules(el);
     return {
       tag: el.tagName.toLowerCase(),
       id: el.id || null,
@@ -129,6 +174,8 @@
       selector: buildSelector(el),
       rect: { width: Math.round(rect.width), height: Math.round(rect.height) },
       computed,
+      matchedRules: matched,
+      blockedSheets,
       outerHTML: outerHTML.length > MAX_HTML ? outerHTML.slice(0, MAX_HTML) : outerHTML,
       outerHTMLTruncated: outerHTML.length > MAX_HTML,
     };
