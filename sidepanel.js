@@ -1799,14 +1799,20 @@
     inspectPanelClose.addEventListener('click', closeInspectPanel);
     inspectPickBtn.addEventListener('click', startPicking);
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !inspectPanel.hidden) { setPicking(false); }
+      if (e.key === 'Escape' && !inspectPanel.hidden) stopPicking();
     });
 
     chrome.runtime.onMessage.addListener((msg, sender) => {
-      if (!msg || msg.type !== 'netlens:inspect:result') return;
-      if (!sender.tab || sender.tab.id !== currentTabId) return;
-      setPicking(false);
-      renderInspectResult(msg.data);
+      if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
+      if (msg.type === 'netlens:inspect:result') {
+        setPicking(false);
+        renderInspectResult(msg.data);
+      } else if (msg.type === 'netlens:inspect:cancelled') {
+        setPicking(false);
+      } else if (msg.type === 'netlens:inspect:error') {
+        setPicking(false);
+        showInspectError(`Inspect failed: ${msg.message}`);
+      }
     });
   }
 

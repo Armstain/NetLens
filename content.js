@@ -111,8 +111,6 @@
       classes: typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter(Boolean) : [],
       rect: { width: Math.round(rect.width), height: Math.round(rect.height) },
       computed,
-      matchedRules: matched,
-      blockedSheets,
       outerHTML: outerHTML.length > MAX_HTML ? outerHTML.slice(0, MAX_HTML) : outerHTML,
       outerHTMLTruncated: outerHTML.length > MAX_HTML,
     };
@@ -133,13 +131,19 @@
     e.stopPropagation();
     e.stopImmediatePropagation();
     const el = lastHovered || e.target;
-    const data = serializeElement(el);
     stopPicker();
-    try { chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, () => { void chrome.runtime.lastError; }); } catch {}
+    try {
+      const data = serializeElement(el);
+      chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, () => { void chrome.runtime.lastError; });
+    } catch (err) {
+      try { chrome.runtime.sendMessage({ type: 'netlens:inspect:error', message: String(err && err.message || err) }, () => { void chrome.runtime.lastError; }); } catch {}
+    }
   }
 
   function onKeydown(e) {
-    if (e.key === 'Escape') stopPicker();
+    if (e.key !== 'Escape') return;
+    stopPicker();
+    try { chrome.runtime.sendMessage({ type: 'netlens:inspect:cancelled' }, () => { void chrome.runtime.lastError; }); } catch {}
   }
 
   function startPicker() {
