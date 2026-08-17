@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NetLens",
-  "version": "5.0",
+  "version": "5.1",
   "description": "See your page's API calls — payloads, responses, headers — in a side panel. No DevTools required.",
   "permissions": ["sidePanel", "tabs", "storage", "cookies", "scripting"],
   "host_permissions": ["<all_urls>"],
