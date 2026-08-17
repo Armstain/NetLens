@@ -1124,9 +1124,12 @@
 
     const detail = document.createElement('div');
     detail.className = 'row-detail';
+    const detailInner = document.createElement('div');
+    detailInner.className = 'row-detail-inner';
+    detail.appendChild(detailInner);
     row.appendChild(detail);
 
-    attachRowToggle(row, head, detail, () => buildLogDetail(detail, d));
+    attachRowToggle(row, head, detail, () => buildLogDetail(detailInner, d));
 
     return row;
   }
@@ -1196,9 +1199,12 @@
 
     const detail = document.createElement('div');
     detail.className = 'row-detail';
+    const detailInner = document.createElement('div');
+    detailInner.className = 'row-detail-inner';
+    detail.appendChild(detailInner);
     row.appendChild(detail);
 
-    attachRowToggle(row, head, detail, () => buildDetail(detail, d));
+    attachRowToggle(row, head, detail, () => buildDetail(detailInner, d));
 
     return row;
   }
@@ -1498,10 +1504,12 @@
   });
 
   // -------------------------------------------------------------- controls
+  const PAUSE_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" focusable="false"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>';
+  const PLAY_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" focusable="false"><path d="M7 4l13 8-13 8V4z"/></svg>';
   pauseBtn.addEventListener('click', () => {
     paused = !paused;
     pauseBtn.classList.toggle('active', paused);
-    pauseBtn.textContent = paused ? '▶' : '⏸';
+    pauseBtn.innerHTML = paused ? PLAY_ICON : PAUSE_ICON;
     pauseBtn.title = paused ? 'Resume capture' : 'Pause capture';
     pulseEl.classList.toggle('paused', paused);
   });
@@ -1609,14 +1617,14 @@
     });
   }
 
-  const PANEL_ANIM_MS = 180;
   function openSlidePanel(panel) {
     panel.hidden = false;
     requestAnimationFrame(() => panel.classList.add('panel-open'));
   }
   function closeSlidePanel(panel) {
     panel.classList.remove('panel-open');
-    setTimeout(() => { panel.hidden = true; }, PANEL_ANIM_MS);
+    const ms = parseFloat(getComputedStyle(panel).transitionDuration) * 1000 || 180;
+    setTimeout(() => { panel.hidden = true; }, ms);
   }
 
   if (storageBtn && storagePanel) {
@@ -1892,8 +1900,8 @@
     decoderForm.querySelectorAll('input[name="decoderType"]').forEach((radio) => {
       radio.addEventListener('change', () => {
         const isFn = decoderForm.decoderType.value === 'function';
-        decoderChainGroup.style.display = isFn ? 'none' : '';
-        decoderCodeGroup.style.display = isFn ? '' : 'none';
+        decoderChainGroup.classList.toggle('is-collapsed', isFn);
+        decoderCodeGroup.classList.toggle('is-collapsed', !isFn);
       });
     });
 
@@ -1920,8 +1928,8 @@
       saveCustomDecoders();
       renderDecoderList();
       decoderForm.reset();
-      decoderChainGroup.style.display = '';
-      decoderCodeGroup.style.display = 'none';
+      decoderChainGroup.classList.remove('is-collapsed');
+      decoderCodeGroup.classList.add('is-collapsed');
     });
   }
 

@@ -15,11 +15,11 @@
       <span class="count" id="count">0</span>
     </div>
     <div class="controls">
-      <button id="inspectBtn" class="icon-btn" title="Inspect an element on the page" aria-label="Inspect element">⌖</button>
-      <button id="storageBtn" class="icon-btn" title="View storage (sessionStorage, cookies)" aria-label="View storage">🗄</button>
-      <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders">⚙</button>
-      <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture">⏸</button>
-      <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests">⌫</button>
+      <button id="inspectBtn" class="icon-btn" title="Inspect an element on the page" aria-label="Inspect element"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg></button>
+      <button id="storageBtn" class="icon-btn" title="View storage (sessionStorage, cookies)" aria-label="View storage"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg></button>
+      <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/></svg></button>
+      <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" focusable="false"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+      <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
     </div>
   </header>
 
@@ -33,7 +33,7 @@
       <input type="checkbox" id="apiOnly" />
       <span>API only</span>
     </label>
-    <label class="errors-toggle" title="Show console.error/warn and uncaught exceptions">
+    <label class="errors-toggle log-toggle" title="Show console.error/warn and uncaught exceptions">
       <input type="checkbox" id="showLogs" checked />
       <span>Console logs</span>
     </label>
@@ -44,7 +44,7 @@
       <span>Element Inspector</span>
       <div class="detail-actions" style="padding:0;">
         <button id="inspectPickBtn" class="mini-btn" type="button">Pick element</button>
-        <button id="inspectPanelClose" class="icon-btn" aria-label="Close">✕</button>
+        <button id="inspectPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
     <div id="inspectBody" class="storage-sections">
@@ -57,7 +57,7 @@
       <span>Storage — <span id="storageOrigin"></span></span>
       <div class="detail-actions" style="padding:0;">
         <button id="storageRefreshBtn" class="mini-btn" type="button">Refresh</button>
-        <button id="storagePanelClose" class="icon-btn" aria-label="Close">✕</button>
+        <button id="storagePanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
     <div id="storageSections" class="storage-sections"></div>
@@ -66,7 +66,7 @@
   <div id="decoderPanel" class="decoder-panel" hidden>
     <div class="decoder-panel-head">
       <span>My Custom Decoders</span>
-      <button id="decoderPanelClose" class="icon-btn" aria-label="Close">✕</button>
+      <button id="decoderPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <p class="decoder-panel-desc">Decoders you save here run automatically next to the built-in ones (Base64, JWT, Hex…) and also show up in every request's "Manual Decode" dropdown.</p>
     <div id="decoderList" class="decoder-list"></div>
@@ -76,15 +76,19 @@
         <label><input type="radio" name="decoderType" value="chain" checked /> Chain of built-in steps</label>
         <label><input type="radio" name="decoderType" value="function" /> Custom JS function</label>
       </div>
-      <div id="decoderChainGroup">
-        <div class="decoder-hint">Use this if your data is standard encodings stacked together (e.g. Base64 of a JSON string). Not for a made-up cipher — use "Custom JS function" for that.</div>
-        <div id="decoderChainSteps" class="decoder-chain-steps"></div>
-        <div class="decoder-hint">Check the steps your data goes through. They run in the order listed above, top to bottom.</div>
+      <div id="decoderChainGroup" class="decoder-type-group">
+        <div class="decoder-type-group-inner">
+          <div class="decoder-hint">Use this if your data is standard encodings stacked together (e.g. Base64 of a JSON string). Not for a made-up cipher — use "Custom JS function" for that.</div>
+          <div id="decoderChainSteps" class="decoder-chain-steps"></div>
+          <div class="decoder-hint">Check the steps your data goes through. They run in the order listed above, top to bottom.</div>
+        </div>
       </div>
-      <div id="decoderCodeGroup" style="display:none;">
-        <div class="decoder-hint">Use this for your own scheme (e.g. a Caesar shift). Write a JS function body that takes the raw string as <code>input</code> and <code>return</code>s the decoded value.</div>
-        <textarea id="decoderCode" class="decoder-code" placeholder="return input.split('').reverse().join('');"></textarea>
-        <div class="decoder-hint">Runs in an isolated worker with no access to the page, tabs, or extension storage.</div>
+      <div id="decoderCodeGroup" class="decoder-type-group is-collapsed">
+        <div class="decoder-type-group-inner">
+          <div class="decoder-hint">Use this for your own scheme (e.g. a Caesar shift). Write a JS function body that takes the raw string as <code>input</code> and <code>return</code>s the decoded value.</div>
+          <textarea id="decoderCode" class="decoder-code" placeholder="return input.split('').reverse().join('');"></textarea>
+          <div class="decoder-hint">Runs in an isolated worker with no access to the page, tabs, or extension storage.</div>
+        </div>
       </div>
       <div class="decoder-form-actions">
         <button type="submit" class="mini-btn">Save Decoder</button>
