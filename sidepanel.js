@@ -237,7 +237,7 @@
     let bad = 0;
     for (let i = 0; i < s.length; i++) {
       const c = s.charCodeAt(i);
-      if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++;
+      if (!(c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126))) bad++;
     }
     return bad / s.length < 0.1;
   }
