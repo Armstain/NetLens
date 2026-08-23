@@ -395,7 +395,7 @@
     return null;
   }
 
-  // ponytail: attempts to auto-repair truncated JSON strings (e.g. capped at 200KB) by closing strings and container brackets.
+  // Repairs bodies cut off at the 200KB capture cap.
   function tryParsePartialJson(str) {
     if (typeof str !== 'string') return null;
     let raw = str.trim();
@@ -1775,7 +1775,7 @@
       setPicking(true);
       chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => {
         if (!chrome.runtime.lastError) return;
-        // Stale content script (e.g. the extension was reloaded after this tab opened) — reinject and retry once.
+        // Stale content script (e.g. the extension was reloaded after this tab opened): reinject and retry once.
         chrome.scripting.executeScript({ target: { tabId: currentTabId }, files: ['content.js'] }, () => {
           if (chrome.runtime.lastError) {
             setPicking(false);

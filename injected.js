@@ -177,7 +177,7 @@
     const start = now();
     const startedAt = Date.now();
 
-    // Call through immediately — the page gets the untouched promise.
+    // Call through immediately  the page gets the untouched promise.
     const promise = origFetch.apply(this, arguments);
 
     promise.then(
