@@ -83,18 +83,42 @@
 
   function positionOverlay(el) {
     const rect = el.getBoundingClientRect();
-    overlayEl.style.top = `${rect.top}px`;
-    overlayEl.style.left = `${rect.left}px`;
-    overlayEl.style.width = `${rect.width}px`;
-    overlayEl.style.height = `${rect.height}px`;
+
+    // getBoundingClientRect() is always viewport-relative, but our overlay's
+    // position:fixed isn't — if any ancestor of it (often html itself, e.g. a
+    // "scale to fit" transform some sites apply on resize, which is exactly
+    // what a narrower viewport from the side panel opening can trigger) has a
+    // transform, filter, or perspective set, that ancestor becomes fixed's
+    // containing block instead of the viewport, and BOTH position and size
+    // stop meaning what rect says (a scale distorts size, not just offset).
+    // Self-calibrate against both: render a known probe box, measure how it
+    // actually lands on screen, and invert that mapping. Reduces to exactly
+    // the untransformed case when there's no such ancestor (scale 1, origin
+    // matches rect as-is).
+    const PROBE = 1000;
+    overlayEl.style.top = '0px';
+    overlayEl.style.left = '0px';
+    overlayEl.style.width = `${PROBE}px`;
+    overlayEl.style.height = `${PROBE}px`;
+    const probe = overlayEl.getBoundingClientRect();
+    const scaleX = probe.width / PROBE || 1;
+    const scaleY = probe.height / PROBE || 1;
+
+    const toLocalX = (viewportX) => (viewportX - probe.left) / scaleX;
+    const toLocalY = (viewportY) => (viewportY - probe.top) / scaleY;
+
+    overlayEl.style.left = `${toLocalX(rect.left)}px`;
+    overlayEl.style.top = `${toLocalY(rect.top)}px`;
+    overlayEl.style.width = `${rect.width / scaleX}px`;
+    overlayEl.style.height = `${rect.height / scaleY}px`;
 
     const id = el.id ? `#${el.id}` : '';
     const cls = typeof el.className === 'string' && el.className.trim()
       ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
     labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
     const top = rect.top > 20 ? rect.top - 20 : rect.bottom + 2;
-    labelEl.style.top = `${top}px`;
-    labelEl.style.left = `${rect.left}px`;
+    labelEl.style.top = `${toLocalY(top)}px`;
+    labelEl.style.left = `${toLocalX(rect.left)}px`;
   }
 
   const COMPUTED_KEYS = ['display', 'position', 'color', 'backgroundColor', 'fontSize', 'fontFamily', 'padding', 'margin', 'border', 'boxSizing'];
