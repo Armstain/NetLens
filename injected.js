@@ -53,6 +53,13 @@
 
   const READABLE_CT = /json|text|xml|javascript|x-www-form-urlencoded/i;
 
+  // Long-lived streams. clone() tees the body, and a branch nobody drains at
+  // the producer's rate buffers without bound — on an SSE feed that never
+  // ends, forever. Match before READABLE_CT, which "text" and "json" catch.
+  const STREAM_CT = /event-stream|x-ndjson|stream\+json/i;
+
+  const isReadableBody = (ct) => READABLE_CT.test(ct) && !STREAM_CT.test(ct);
+
   // ------------------------------------------------------------------ logs
   const LOG_RATE_LIMIT = 50; // per second
   let logWindowStart = now();
@@ -182,12 +189,23 @@
 
     promise.then(
       (res) => {
+        // clone() MUST happen here, synchronously. Our handler is registered
+        // before the page's, so we run first; a queued microtask would run
+        // *after* the page's `r => r.json()` has already disturbed the body,
+        // and clone() would throw. Only the body read is deferred.
+        // Clone solely for bodies we intend to read: an unread clone tees the
+        // stream and buffers the whole response with nothing draining it.
+        const ct = res.headers.get('content-type') || '';
+        let cloned = null;
+        if (isReadableBody(ct)) {
+          try { cloned = res.clone(); } catch {}
+        }
+
         // Everything below happens after the page already has its response.
         queueMicrotask(() => {
           try {
             const responseHeaders = {};
             res.headers.forEach((v, k) => { responseHeaders[k] = v; });
-            const ct = res.headers.get('content-type') || '';
             const base = {
               id,
               kind: 'fetch',
@@ -202,14 +220,20 @@
               responseHeaders,
               contentType: ct,
             };
-            if (READABLE_CT.test(ct)) {
-              res.clone().text().then(
-                (text) => {
-                  const t = truncate(text);
-                  enqueue({ ...base, responseBody: t.body, truncated: t.truncated, responseSize: t.size });
-                },
-                () => enqueue({ ...base, responseBody: null, responseSize: 0 })
-              );
+            if (isReadableBody(ct)) {
+              // No clone means the body was unreachable — still record the
+              // request rather than dropping the entry entirely.
+              if (!cloned) {
+                enqueue({ ...base, responseBody: '[body unavailable]', responseSize: 0 });
+              } else {
+                cloned.text().then(
+                  (text) => {
+                    const t = truncate(text);
+                    enqueue({ ...base, responseBody: t.body, truncated: t.truncated, responseSize: t.size });
+                  },
+                  () => enqueue({ ...base, responseBody: null, responseSize: 0 })
+                );
+              }
             } else {
               enqueue({ ...base, responseBody: ct ? `[${ct}]` : null, responseSize: 0 });
             }
