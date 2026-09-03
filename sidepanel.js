@@ -220,30 +220,52 @@
     chrome.storage.local.set({ netlensCustomDecoders: customDecoders });
   }
 
-  function runCustomFunction(code, input, timeoutMs = 1000) {
+  // MV3 extension pages default to a CSP with no 'unsafe-eval', which a
+  // Worker created here would inherit — new Function() would throw. The
+  // sanctioned exception is a manifest "sandbox" page (sandbox.html), which
+  // gets a relaxed CSP but zero access to chrome.* APIs, tabs, or storage.
+  // The eval itself still runs in a Worker inside that page so a runaway
+  // loop is recoverable via Worker.terminate() rather than hanging a frame.
+  let sandboxFrame = null;
+  let sandboxReadyPromise = null;
+  const sandboxPending = new Map(); // reqId -> { resolve, reject }
+  let sandboxReqSeq = 0;
+
+  function ensureSandbox() {
+    if (sandboxReadyPromise) return sandboxReadyPromise;
+    sandboxReadyPromise = new Promise((resolve) => {
+      sandboxFrame = document.createElement('iframe');
+      sandboxFrame.hidden = true;
+      sandboxFrame.src = chrome.runtime.getURL('sandbox.html');
+      sandboxFrame.addEventListener('load', () => resolve(), { once: true });
+      document.body.appendChild(sandboxFrame);
+    });
+    return sandboxReadyPromise;
+  }
+
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!sandboxFrame || event.source !== sandboxFrame.contentWindow) return;
+    if (!data || data.__netlensSandbox !== true) return;
+    const entry = sandboxPending.get(data.reqId);
+    if (!entry) return;
+    sandboxPending.delete(data.reqId);
+    if (data.ok) entry.resolve(data.result);
+    else entry.reject(new Error(data.error || 'Unknown error'));
+  });
+
+  async function runCustomFunction(code, input, timeoutMs = 1000) {
+    await ensureSandbox();
+    const reqId = ++sandboxReqSeq;
     return new Promise((resolve, reject) => {
-      const src = `self.onmessage=function(e){try{const fn=new Function('input',e.data.code);const r=fn(e.data.input);self.postMessage({ok:true,result:r});}catch(err){self.postMessage({ok:false,error:String(err&&err.message||err)});}};`;
-      let worker;
-      try {
-        const blob = new Blob([src], { type: 'application/javascript' });
-        worker = new Worker(URL.createObjectURL(blob));
-      } catch (e) { reject(e); return; }
-      const timer = setTimeout(() => {
-        worker.terminate();
-        reject(new Error('Timed out (possible infinite loop)'));
-      }, timeoutMs);
-      worker.onmessage = (e) => {
-        clearTimeout(timer);
-        worker.terminate();
-        if (e.data && e.data.ok) resolve(e.data.result);
-        else reject(new Error((e.data && e.data.error) || 'Unknown error'));
-      };
-      worker.onerror = (e) => {
-        clearTimeout(timer);
-        worker.terminate();
-        reject(new Error(e.message || 'Worker error'));
-      };
-      worker.postMessage({ code, input });
+      sandboxPending.set(reqId, { resolve, reject });
+      // targetOrigin '*': sandbox.html has an opaque ("null") origin by spec,
+      // so it can't be addressed by an origin string. Only our own iframe —
+      // one we created, pointed at our own extension's sandbox.html — ever
+      // receives this, so it isn't an exposure.
+      sandboxFrame.contentWindow.postMessage(
+        { __netlensSandbox: true, op: 'run', reqId, code, input, timeoutMs }, '*'
+      );
     });
   }
 

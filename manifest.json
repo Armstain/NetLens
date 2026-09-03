@@ -11,6 +11,9 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
   "action": {
     "default_title": "Open NetLens",
     "default_icon": {
