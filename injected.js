@@ -289,59 +289,73 @@
   XHRp.send = function (body) {
     const meta = this.__netlens;
     if (meta) {
-      const id = ++seq;
+      meta.id = ++seq;
       meta.start = now();
       meta.startedAt = Date.now();
       meta.requestBody = serializeRequestBody(body);
 
-      this.addEventListener('loadend', () => {
-        try {
-          const duration = now() - meta.start;
-          const ct = (this.getResponseHeader && this.getResponseHeader('content-type')) || '';
+      // Bind loadend exactly once per XHR instance. A reused XHR (open+send
+      // called again on the same object — some hand-rolled wrappers and
+      // polling code do this) would otherwise stack a new listener on every
+      // send(), each closing over that call's now-stale `meta`. All of them
+      // fire on the NEXT loadend, so a later request's live response data
+      // (this.status, this.responseText, ...) gets enqueued paired with an
+      // earlier request's method/url/headers — not just a duplicate row, a
+      // wrong one. Reading `this.__netlens` fresh at fire time instead of
+      // closing over `meta` keeps a single listener always correctly paired.
+      if (!this.__netlensBound) {
+        this.__netlensBound = true;
+        this.addEventListener('loadend', () => {
+          const m = this.__netlens;
+          if (!m) return;
+          try {
+            const duration = now() - m.start;
+            const ct = (this.getResponseHeader && this.getResponseHeader('content-type')) || '';
 
-          let responseBody = null;
-          let responseSize = 0;
-          let truncated = false;
+            let responseBody = null;
+            let responseSize = 0;
+            let truncated = false;
 
-          if (this.responseType === '' || this.responseType === 'text') {
-            const t = truncate(this.responseText);
-            responseBody = t.body; responseSize = t.size; truncated = t.truncated;
-          } else if (this.responseType === 'json') {
-            try {
-              const t = truncate(JSON.stringify(this.response));
+            if (this.responseType === '' || this.responseType === 'text') {
+              const t = truncate(this.responseText);
               responseBody = t.body; responseSize = t.size; truncated = t.truncated;
-            } catch {}
-          } else {
-            responseBody = `[${this.responseType} response]`;
-          }
+            } else if (this.responseType === 'json') {
+              try {
+                const t = truncate(JSON.stringify(this.response));
+                responseBody = t.body; responseSize = t.size; truncated = t.truncated;
+              } catch {}
+            } else {
+              responseBody = `[${this.responseType} response]`;
+            }
 
-          const responseHeaders = {};
-          const raw = (this.getAllResponseHeaders && this.getAllResponseHeaders()) || '';
-          raw.trim().split(/[\r\n]+/).forEach((line) => {
-            const i = line.indexOf(': ');
-            if (i > 0) responseHeaders[line.slice(0, i)] = line.slice(i + 2);
-          });
+            const responseHeaders = {};
+            const raw = (this.getAllResponseHeaders && this.getAllResponseHeaders()) || '';
+            raw.trim().split(/[\r\n]+/).forEach((line) => {
+              const i = line.indexOf(': ');
+              if (i > 0) responseHeaders[line.slice(0, i)] = line.slice(i + 2);
+            });
 
-          enqueue({
-            id,
-            kind: 'xhr',
-            method: meta.method,
-            url: meta.url,
-            status: this.status,
-            statusText: this.statusText,
-            startedAt: meta.startedAt,
-            duration,
-            requestHeaders: meta.requestHeaders,
-            requestBody: meta.requestBody,
-            responseHeaders,
-            responseBody,
-            responseSize,
-            truncated,
-            contentType: ct,
-            failed: this.status === 0,
-          });
-        } catch {}
-      });
+            enqueue({
+              id: m.id,
+              kind: 'xhr',
+              method: m.method,
+              url: m.url,
+              status: this.status,
+              statusText: this.statusText,
+              startedAt: m.startedAt,
+              duration,
+              requestHeaders: m.requestHeaders,
+              requestBody: m.requestBody,
+              responseHeaders,
+              responseBody,
+              responseSize,
+              truncated,
+              contentType: ct,
+              failed: this.status === 0,
+            });
+          } catch {}
+        });
+      }
     }
     return origSend.apply(this, arguments);
   };
