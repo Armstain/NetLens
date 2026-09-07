@@ -1,5 +1,9 @@
 # Changelog
 
+## 6.1
+
+- Added a search box to the full-screen view, for searching within the currently open tab's content.
+
 ## 6.0
 
 - Added a full-screen view button (expand icon) next to the Response/Payload/Headers/Decoded tabs — opens the current tab's content across the entire side panel for reading large bodies.
