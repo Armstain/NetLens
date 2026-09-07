@@ -109,7 +109,7 @@ body { display: flex; flex-direction: column; }
   flex-shrink: 0;
 }
 
-#filter {
+#filter, #fullscreenSearch {
   flex: 1;
   min-width: 0;
   background: var(--surface);
@@ -121,8 +121,8 @@ body { display: flex; flex-direction: column; }
   padding: 5px 9px;
   transition: border-color 120ms ease;
 }
-#filter::placeholder { color: var(--faint); }
-#filter:focus { outline: none; border-color: var(--indigo); }
+#filter::placeholder, #fullscreenSearch::placeholder { color: var(--faint); }
+#filter:focus, #fullscreenSearch:focus { outline: none; border-color: var(--indigo); }
 
 .errors-toggle {
   display: flex;

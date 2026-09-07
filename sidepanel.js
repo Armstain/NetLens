@@ -1030,8 +1030,10 @@
       fullscreenTitleEl.textContent = activeName;
       renderView(activeName, fullscreenBodyEl);
       const currentQ = filterEl.value.trim().toLowerCase();
+      fullscreenSearchEl.value = currentQ;
       if (currentQ) highlightMatches(fullscreenBodyEl, currentQ, true);
       openSlidePanel(fullscreenPanel);
+      fullscreenSearchEl.focus();
     });
     tabs.appendChild(fsBtn);
 
@@ -1395,11 +1397,17 @@
   const fullscreenPanelClose = document.getElementById('fullscreenPanelClose');
   const fullscreenTitleEl = document.getElementById('fullscreenTitle');
   const fullscreenBodyEl = document.getElementById('fullscreenBody');
+  const fullscreenSearchEl = document.getElementById('fullscreenSearch');
   if (fullscreenPanel && fullscreenPanelClose) {
     const closeFullscreen = () => closeSlidePanel(fullscreenPanel);
     fullscreenPanelClose.addEventListener('click', closeFullscreen);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !fullscreenPanel.hidden) closeFullscreen();
+    });
+  }
+  if (fullscreenSearchEl) {
+    fullscreenSearchEl.addEventListener('input', () => {
+      highlightMatches(fullscreenBodyEl, fullscreenSearchEl.value.trim().toLowerCase(), false);
     });
   }
 
