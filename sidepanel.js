@@ -972,14 +972,16 @@
     const body = document.createElement('div');
     body.className = 'tab-body';
 
-    const views = {
-      Response: () => renderBody(body, d.responseBody, d.truncated),
-      Payload: () => renderBody(body, d.requestBody, false),
-      Headers: () => renderHeaders(body, d),
-    };
+    function renderView(name, target) {
+      if (name === 'Response') renderBody(target, d.responseBody, d.truncated);
+      else if (name === 'Payload') renderBody(target, d.requestBody, false);
+      else if (name === 'Headers') renderHeaders(target, d);
+      else if (name === 'Decoded') renderDecoded(target, d);
+    }
 
+    const views = { Response: () => renderView('Response', body), Payload: () => renderView('Payload', body), Headers: () => renderView('Headers', body) };
     if (hasDecodableData(d, customDecoders)) {
-      views.Decoded = () => renderDecoded(body, d);
+      views.Decoded = () => renderView('Decoded', body);
     }
 
     const q = filterEl.value.trim().toLowerCase();
@@ -1003,6 +1005,7 @@
       btn.addEventListener('click', () => {
         if (activeBtn) activeBtn.classList.remove('active');
         activeBtn = btn;
+        activeName = name;
         btn.classList.add('active');
         views[name]();
         const currentQ = filterEl.value.trim().toLowerCase();
@@ -1016,6 +1019,21 @@
       activeBtn = tabs.firstChild;
       activeName = Object.keys(views)[0];
     }
+
+    const fsBtn = document.createElement('button');
+    fsBtn.className = 'icon-btn fullscreen-btn';
+    fsBtn.type = 'button';
+    fsBtn.title = 'View full screen';
+    fsBtn.setAttribute('aria-label', 'View full screen');
+    fsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    fsBtn.addEventListener('click', () => {
+      fullscreenTitleEl.textContent = activeName;
+      renderView(activeName, fullscreenBodyEl);
+      const currentQ = filterEl.value.trim().toLowerCase();
+      if (currentQ) highlightMatches(fullscreenBodyEl, currentQ, true);
+      openSlidePanel(fullscreenPanel);
+    });
+    tabs.appendChild(fsBtn);
 
     container.append(tabs, body);
     if (activeBtn) activeBtn.classList.add('active');
@@ -1371,6 +1389,18 @@
     panel.classList.remove('panel-open');
     const ms = parseFloat(getComputedStyle(panel).transitionDuration) * 1000 || 180;
     setTimeout(() => { panel.hidden = true; }, ms);
+  }
+
+  const fullscreenPanel = document.getElementById('fullscreenPanel');
+  const fullscreenPanelClose = document.getElementById('fullscreenPanelClose');
+  const fullscreenTitleEl = document.getElementById('fullscreenTitle');
+  const fullscreenBodyEl = document.getElementById('fullscreenBody');
+  if (fullscreenPanel && fullscreenPanelClose) {
+    const closeFullscreen = () => closeSlidePanel(fullscreenPanel);
+    fullscreenPanelClose.addEventListener('click', closeFullscreen);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !fullscreenPanel.hidden) closeFullscreen();
+    });
   }
 
   if (storageBtn && storagePanel) {

@@ -284,6 +284,7 @@ body { display: flex; flex-direction: column; }
 
 .tabs {
   display: flex;
+  align-items: center;
   gap: 2px;
   padding: 8px 12px 0;
 }
@@ -636,6 +637,33 @@ mark.hl {
   opacity: 1;
   transform: translateY(0);
 }
+
+.fullscreen-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--surface);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+.fullscreen-panel.panel-open {
+  opacity: 1;
+  transform: translateY(0);
+}
+.fullscreen-panel[hidden] {
+  display: none;
+}
+.fullscreen-body {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  position: relative;
+}
+.fullscreen-btn { margin-left: auto; }
 .decoder-panel-head {
   display: flex;
   align-items: center;
