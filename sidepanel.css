@@ -800,3 +800,44 @@ mark.hl {
   vertical-align: baseline;
 }
 .css-cond { color: var(--amber); font-size: 11px; margin-bottom: 4px; }
+
+/* ------------------------------------------------------------ page styles */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+.swatch-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.swatch-chip:hover { border-color: var(--border-strong); }
+.swatch-chip.copied { border-color: var(--emerald-deep); color: var(--emerald); }
+.swatch-box {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+}
+.swatch-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.font-list { display: flex; flex-direction: column; gap: 6px; }
+.font-row {
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.font-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-meta { color: var(--muted); font-family: var(--mono); font-size: 10.5px; margin-top: 2px; }

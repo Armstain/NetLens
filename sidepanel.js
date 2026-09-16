@@ -1382,6 +1382,116 @@
     });
   }
 
+  // ------------------------------------------------------------ page styles
+  const paletteBtn = document.getElementById('paletteBtn');
+  const palettePanel = document.getElementById('palettePanel');
+  const palettePanelClose = document.getElementById('palettePanelClose');
+  const paletteRefreshBtn = document.getElementById('paletteRefreshBtn');
+  const paletteBodyEl = document.getElementById('paletteBody');
+
+  function paletteNote(text) {
+    paletteBodyEl.textContent = '';
+    const note = document.createElement('div');
+    note.className = 'note storage-empty';
+    note.textContent = text;
+    paletteBodyEl.appendChild(note);
+  }
+
+  function buildColorGrid(colors) {
+    const grid = document.createElement('div');
+    grid.className = 'swatch-grid';
+    for (const { value, count, roles } of colors) {
+      const chip = document.createElement('button');
+      chip.className = 'swatch-chip';
+      chip.type = 'button';
+      const hex = rgbToHex(value);
+      chip.title = `${value} · ${count} use${count === 1 ? '' : 's'} · ${roles.join(', ')}`;
+      const box = document.createElement('span');
+      box.className = 'swatch-box';
+      box.style.background = value;
+      const label = document.createElement('span');
+      label.className = 'swatch-label';
+      label.textContent = hex || value;
+      chip.append(box, label);
+      chip.addEventListener('click', () => {
+        navigator.clipboard.writeText(hex || value).then(() => {
+          chip.classList.add('copied');
+          setTimeout(() => chip.classList.remove('copied'), 900);
+        }).catch(() => {});
+      });
+      grid.appendChild(chip);
+    }
+    return grid;
+  }
+
+  function buildFontList(fonts) {
+    const list = document.createElement('div');
+    list.className = 'font-list';
+    for (const { family, count, sizes, weights } of fonts) {
+      const row = document.createElement('div');
+      row.className = 'font-row';
+      const name = document.createElement('div');
+      name.className = 'font-name';
+      // Preview the family in its own face, so a stack that never actually
+      // loaded is visible as such instead of reading like a success.
+      name.style.fontFamily = family;
+      name.textContent = family;
+      const meta = document.createElement('div');
+      meta.className = 'font-meta';
+      meta.textContent = `${count} element${count === 1 ? '' : 's'} · ${sizes.join(', ')} · ${weights.join(', ')}`;
+      row.append(name, meta);
+      list.appendChild(row);
+    }
+    return list;
+  }
+
+  function loadPageStyles() {
+    if (currentTabId == null) { paletteNote('No active tab.'); return; }
+    paletteNote('Scanning…');
+    chrome.tabs.sendMessage(currentTabId, { type: 'netlens:pagestyles' }, (res) => {
+      void chrome.runtime.lastError;
+      if (!res) { paletteNote('Could not scan this page. Reload it and try again.'); return; }
+
+      paletteBodyEl.textContent = '';
+      if (res.truncated) {
+        const note = document.createElement('div');
+        note.className = 'trunc-note';
+        note.textContent = `⚠ Stopped after the first ${res.scanned.toLocaleString()} elements.`;
+        paletteBodyEl.appendChild(note);
+      }
+
+      const colorWrap = document.createElement('div');
+      colorWrap.style.position = 'relative';
+      if (res.colors.length) {
+        addCopyButton(colorWrap, res.colors.map((c) => rgbToHex(c.value) || c.value).join('\n'), 'Copy all');
+        colorWrap.appendChild(buildColorGrid(res.colors));
+      }
+      paletteBodyEl.appendChild(buildInspectSection(`Colours (${res.colors.length})`, true, colorWrap));
+
+      const fontWrap = document.createElement('div');
+      fontWrap.style.position = 'relative';
+      if (res.fonts.length) {
+        addCopyButton(fontWrap, res.fonts.map((f) => f.family).join('\n'), 'Copy all');
+        fontWrap.appendChild(buildFontList(res.fonts));
+      }
+      paletteBodyEl.appendChild(buildInspectSection(`Fonts (${res.fonts.length})`, true, fontWrap));
+    });
+  }
+
+  if (paletteBtn && palettePanel) {
+    const openPalettePanel = () => { openSlidePanel(palettePanel); loadPageStyles(); };
+    const closePalettePanel = () => closeSlidePanel(palettePanel);
+
+    paletteBtn.addEventListener('click', () => {
+      if (palettePanel.hidden) openPalettePanel(); else closePalettePanel();
+    });
+    palettePanelClose.addEventListener('click', closePalettePanel);
+    paletteRefreshBtn.addEventListener('click', loadPageStyles);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !palettePanel.hidden) closePalettePanel();
+    });
+  }
+
   function openSlidePanel(panel) {
     panel.hidden = false;
     requestAnimationFrame(() => panel.classList.add('panel-open'));

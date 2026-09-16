@@ -58,6 +58,10 @@
       sendResponse({ ok: true });
       return;
     }
+    if (msg.type === 'netlens:pagestyles') {
+      sendResponse(scanPageStyles());
+      return;
+    }
   });
 
   // ------------------------------------------------------------- inspector
@@ -400,6 +404,74 @@
     if (e.key !== 'Escape') return;
     stopPicker();
     try { chrome.runtime.sendMessage({ type: 'netlens:inspect:cancelled' }, () => { void chrome.runtime.lastError; }); } catch {}
+  }
+
+  // ---------------------------------------------------- page-wide styles
+  // Walking the whole tree costs a getComputedStyle per element, so it runs
+  // only on an explicit request and stops at a ceiling rather than hanging a
+  // 50k-node page.
+  // ponytail: flat cap, sample every Nth element if real pages hit the ceiling
+  const SCAN_LIMIT = 10000;
+  const SCAN_SKIP_TAGS = new Set(['script', 'style', 'link', 'meta', 'title', 'noscript', 'template', 'br']);
+  const TRANSPARENT = new Set(['rgba(0, 0, 0, 0)', 'transparent']);
+  const SIDES = ['Top', 'Right', 'Bottom', 'Left'];
+
+  function scanPageStyles() {
+    const all = document.querySelectorAll('body *');
+    const limit = Math.min(all.length, SCAN_LIMIT);
+    const fonts = new Map();
+    const colors = new Map();
+
+    const bump = (map, key, role) => {
+      let hit = map.get(key);
+      if (!hit) {
+        hit = { count: 0, roles: new Set(), sizes: new Set(), weights: new Set() };
+        map.set(key, hit);
+      }
+      hit.count++;
+      if (role) hit.roles.add(role);
+      return hit;
+    };
+
+    for (let i = 0; i < limit; i++) {
+      const el = all[i];
+      if (el === defaultsFrame || el === overlayEl || el === labelEl) continue;
+      if (SCAN_SKIP_TAGS.has(el.tagName.toLowerCase())) continue;
+
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') continue;
+
+      // Only elements holding their own text contribute a font or a text
+      // colour; every wrapper inherits both and would otherwise dominate the
+      // tally without anything on screen to show for it.
+      const hasOwnText = Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.nodeValue.trim());
+      if (hasOwnText) {
+        const font = bump(fonts, cs.fontFamily);
+        font.sizes.add(cs.fontSize);
+        font.weights.add(cs.fontWeight);
+        if (!TRANSPARENT.has(cs.color)) bump(colors, cs.color, 'text');
+      }
+      if (!TRANSPARENT.has(cs.backgroundColor)) bump(colors, cs.backgroundColor, 'background');
+      for (const side of SIDES) {
+        if (cs[`border${side}Width`] === '0px') continue;
+        const color = cs[`border${side}Color`];
+        if (!TRANSPARENT.has(color)) bump(colors, color, 'border');
+      }
+    }
+
+    const byCount = (a, b) => b.count - a.count;
+    const px = (v) => parseFloat(v) || 0;
+    return {
+      fonts: [...fonts].map(([family, v]) => ({
+        family,
+        count: v.count,
+        sizes: [...v.sizes].sort((a, b) => px(a) - px(b)),
+        weights: [...v.weights].sort((a, b) => px(a) - px(b)),
+      })).sort(byCount),
+      colors: [...colors].map(([value, v]) => ({ value, count: v.count, roles: [...v.roles] })).sort(byCount),
+      scanned: limit,
+      truncated: all.length > limit,
+    };
   }
 
   function startPicker() {
