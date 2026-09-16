@@ -11,11 +11,20 @@ const CSS_GROUPS = [
   ['transition', 'animation', 'transform', 'will-change', 'cursor', 'pointer-events', 'user-select'],
 ];
 
+// Index-aligned with CSS_GROUPS, kept next to it so the two can never drift —
+// the last label (index CSS_GROUPS.length) is cssGroupIndex()'s fallthrough
+// for a property that matched no group.
+const CSS_GROUP_LABELS = ['Position', 'Flex & Grid', 'Box Model', 'Typography', 'Appearance', 'Motion & Interaction', 'Other'];
+
 function cssGroupIndex(prop) {
   for (let i = 0; i < CSS_GROUPS.length; i++) {
     if (CSS_GROUPS[i].some((p) => prop === p || prop.startsWith(p))) return i;
   }
   return CSS_GROUPS.length;
+}
+
+function cssGroupLabel(prop) {
+  return CSS_GROUP_LABELS[cssGroupIndex(prop)];
 }
 
 function sortCssProps(pairs) {
@@ -165,5 +174,5 @@ function rgbToHex(value) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { cssGroupIndex, sortCssProps, compactSides, collapseShorthands, cssRuleText, splitSelectorList, scanStates, rgbToHex };
+  module.exports = { cssGroupIndex, cssGroupLabel, sortCssProps, compactSides, collapseShorthands, cssRuleText, splitSelectorList, scanStates, rgbToHex };
 }

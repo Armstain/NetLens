@@ -682,6 +682,141 @@ mark.hl {
   font-size: 11px;
   line-height: 1.5;
 }
+/* -------------------------------------------------------------- settings */
+.settings-body {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.set-group { display: flex; flex-direction: column; gap: 5px; }
+.set-label {
+  color: var(--faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.set-label-row { display: flex; align-items: center; justify-content: space-between; }
+.set-info {
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--faint);
+  font-size: 9px;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+  cursor: help;
+  user-select: none;
+}
+.set-info:hover { color: var(--text); border-color: var(--indigo); }
+.set-info:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.set-row:hover { color: var(--text); }
+.set-master { color: var(--text); font-size: 12px; }
+.set-row input[type="checkbox"] {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface-2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.set-row input[type="checkbox"]:checked { background: var(--indigo); border-color: var(--indigo); }
+.set-row input[type="checkbox"]:checked::before {
+  content: "";
+  width: 3px;
+  height: 6px;
+  margin-top: -2px;
+  border: solid var(--bg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.set-presets, .set-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.set-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--faint);
+  cursor: pointer;
+  user-select: none;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+.set-chip:hover { color: var(--text); border-color: var(--faint); }
+.set-chip.on { color: var(--text); border-color: var(--indigo); background: color-mix(in srgb, var(--indigo) 22%, var(--surface-2)); }
+.set-chip.on.chip-err { border-color: var(--red); background: color-mix(in srgb, var(--red) 22%, var(--surface-2)); }
+.set-chip.on.chip-ok { border-color: var(--emerald); background: color-mix(in srgb, var(--emerald) 22%, var(--surface-2)); }
+/* Dashed = some of the verbs under this group are off. */
+.set-chip.on.partial { border-style: dashed; background: color-mix(in srgb, var(--indigo) 10%, var(--surface-2)); }
+
+.set-advanced > summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 10px;
+  padding: 3px 0;
+  user-select: none;
+}
+.set-advanced > summary::-webkit-details-marker { display: none; }
+.set-advanced > summary::before { content: "▸ "; display: inline-block; transition: transform 150ms ease-out; }
+.set-advanced[open] > summary::before { transform: rotate(90deg); }
+.set-advanced > summary:hover { color: var(--text); }
+.set-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.set-field-wide { display: flex; }
+.set-field-wide input { flex: 1; min-width: 0; }
+.set-field input, .set-field select {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+.set-field input[type="number"] { width: 64px; }
+.set-field input:focus-visible, .set-field select:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 1px;
+}
+.set-unit, .set-hint-inline { color: var(--faint); font-size: 10px; }
+.set-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.set-divider { height: 1px; background: var(--border); margin: 2px 0; }
+.set-actions { display: flex; justify-content: space-between; }
+/* Dimmed, not disabled — a dev should be able to dial settings in before
+   flipping the master switch on. */
+.settings-body.off .set-group,
+.settings-body.off .set-row:not(.set-master) { opacity: 0.5; }
+
 .decoder-list {
   padding: 10px 12px;
   display: flex;
@@ -779,15 +914,35 @@ mark.hl {
 .decoder-form-actions { display: flex; justify-content: flex-end; }
 
 /* ------------------------------------------------------------- CSS output */
-.css-block {
+.css-rule {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
 }
-.css-block:last-child { margin-bottom: 0; }
+.css-rule:last-child { margin-bottom: 0; }
+.css-sel-line { color: var(--text); padding: 2px 0; }
 .css-sel { color: var(--emerald); font-weight: 600; }
+.css-close { color: var(--text); padding: 2px 0; }
+.css-group { margin-left: 14px; }
+.css-group summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 0;
+  user-select: none;
+}
+.css-group summary::-webkit-details-marker { display: none; }
+.css-group summary::before { content: "▸ "; display: inline-block; transition: transform 150ms ease-out; }
+.css-group[open] > summary::before { transform: rotate(90deg); }
+.css-props { margin: 0 0 2px; padding-left: 4px; }
+.css-prop-line { display: block; }
 .css-prop { color: var(--indigo); }
 .css-val { color: var(--text); }
 .css-swatch {
@@ -800,6 +955,24 @@ mark.hl {
   vertical-align: baseline;
 }
 .css-cond { color: var(--amber); font-size: 11px; margin-bottom: 4px; }
+
+.eyedrop-result .copy-btn {
+  position: static;
+  float: none;
+}
+.eyedrop-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 12px 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
 
 /* ------------------------------------------------------------ page styles */
 .swatch-grid {

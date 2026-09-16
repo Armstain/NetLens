@@ -19,13 +19,14 @@
       <button id="paletteBtn" class="icon-btn" title="Scan page fonts and colours" aria-label="Page styles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/><circle cx="15" cy="9" r="1.4" fill="currentColor"/><circle cx="9.5" cy="14.5" r="1.4" fill="currentColor"/><path d="M14 13.5c2 0 3.2 1 3.2 2.3S16 18 14.6 18"/></svg></button>
       <button id="storageBtn" class="icon-btn" title="View storage (sessionStorage, cookies)" aria-label="View storage"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg></button>
       <button id="decodersBtn" class="icon-btn" title="Manage custom decoders" aria-label="Manage custom decoders"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="18" r="2"/></svg></button>
+      <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       <button id="pauseBtn" class="icon-btn" title="Pause capture" aria-label="Pause capture"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true" focusable="false"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
       <button id="clearBtn" class="icon-btn" title="Clear requests" aria-label="Clear requests"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
     </div>
   </header>
 
   <div class="filterbar">
-    <input id="filter" type="text" placeholder="Filter by URL or method…" autocomplete="off" spellcheck="false" />
+    <input id="filter" type="text" placeholder="Filter by URL or method, or /regex/…" autocomplete="off" spellcheck="false" />
     <label class="errors-toggle">
       <input type="checkbox" id="errorsOnly" />
       <span>Errors only</span>
@@ -37,10 +38,6 @@
     <label class="errors-toggle log-toggle" title="Show console.error/warn and uncaught exceptions">
       <input type="checkbox" id="showLogs" />
       <span>Console logs</span>
-    </label>
-    <label class="errors-toggle api-toggle" title="Show a toast on the page itself for JSON/XML/GraphQL calls, even with the panel closed">
-      <input type="checkbox" id="toastApi" />
-      <span>Toast API calls</span>
     </label>
   </div>
 
@@ -61,10 +58,12 @@
     <div class="decoder-panel-head">
       <span>Page Styles</span>
       <div class="detail-actions" style="padding:0;">
+        <button id="paletteEyedropperBtn" class="mini-btn" type="button" title="Pick any color on the page">Pick color</button>
         <button id="paletteRefreshBtn" class="mini-btn" type="button">Rescan</button>
         <button id="palettePanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
+    <div id="paletteEyedropperResult" class="eyedrop-result" hidden></div>
     <div id="paletteBody" class="storage-sections">
       <div class="note storage-empty">Scanning…</div>
     </div>
@@ -79,6 +78,120 @@
       </div>
     </div>
     <div id="storageSections" class="storage-sections"></div>
+  </div>
+
+  <div id="settingsPanel" class="decoder-panel" hidden>
+    <div class="decoder-panel-head">
+      <span>Settings</span>
+      <button id="settingsPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <p class="decoder-panel-desc">Page toasts fire on the page itself, so you see traffic without opening this panel. They respect these rules only — the filter bar above is for this list.</p>
+
+    <div class="settings-body">
+      <label class="set-row set-master">
+        <input type="checkbox" id="setEnabled" />
+        <span>Enable page toasts</span>
+      </label>
+
+      <div class="set-group">
+        <div class="set-label-row">
+          <div class="set-label">Presets</div>
+        </div>
+        <div class="set-presets">
+          <button type="button" class="mini-btn" data-preset="errors">4xx / 5xx / failed</button>
+          <button type="button" class="mini-btn" data-preset="mutations">Mutations</button>
+          <button type="button" class="mini-btn" data-preset="slow">Slow &gt; 1s</button>
+          <button type="button" class="mini-btn" data-preset="all">All XHR / fetch</button>
+          <button type="button" class="set-info" tabindex="0" title="Presets just fill in the fields below with a common setup — you can still edit anything after clicking one.">i</button>
+        </div>
+      </div>
+
+      <div class="set-group">
+        <div class="set-label-row">
+          <div class="set-label">Status class</div>
+          <button type="button" class="set-info" tabindex="0" title="HTTP response classes. 2xx = success. 3xx = redirect. 4xx = client error (404, 401, bad input). 5xx = server error (500, 503). Failed = no response at all — network down, CORS blocked, DNS failure, or timeout.">i</button>
+        </div>
+        <div class="set-chips" id="setStatus"></div>
+      </div>
+
+      <div class="set-group">
+        <div class="set-label-row">
+          <div class="set-label">Method</div>
+          <button type="button" class="set-info" tabindex="0" title="Reads are GET and HEAD — they only fetch data. Writes are POST, PUT, PATCH and DELETE — they change something on the server. Muting reads is the usual move: it kills polling noise and leaves the calls that actually alter state. Expand 'per method' to pick individual verbs.">i</button>
+        </div>
+        <div class="set-chips" id="setMethodGroups"></div>
+        <details class="set-advanced">
+          <summary>per method</summary>
+          <div class="set-chips" id="setMethods"></div>
+        </details>
+      </div>
+
+      <div class="set-group">
+        <label class="set-field">
+          <span>Also toast anything slower than</span>
+          <input type="number" id="setSlowMs" min="0" max="600000" step="50" />
+          <span class="set-unit">ms &middot; 0 = off</span>
+          <button type="button" class="set-info" tabindex="0" title="Toasts a call that takes longer than this, even if it comes back 200 OK. 0 disables it. Useful for catching a backend that's degrading before it starts erroring.">i</button>
+        </label>
+      </div>
+
+      <div class="set-group">
+        <label class="set-field set-field-wide">
+          <span>URL match</span>
+          <input type="text" id="setUrlMatch" placeholder="/api/  &mdash;  or a regex: /\/v[0-9]+\//i" autocomplete="off" spellcheck="false" />
+          <button type="button" class="set-info" tabindex="0" title="Only toast calls whose URL matches. Plain text is a case-insensitive substring, e.g. /api/ matches https://x.com/api/orders. Wrap it in slashes for a regex, e.g. /\/v[0-9]+\// matches /v1/ or /v2/. Leave blank to match every URL.">i</button>
+        </label>
+      </div>
+
+      <label class="set-row">
+        <input type="checkbox" id="setGqlMutationsOnly" />
+        <span>GraphQL: mutations only <span class="set-hint-inline">queries POST too</span></span>
+        <button type="button" class="set-info" tabindex="0" title="GraphQL sends both reads (query) and writes (mutation) as a POST to one endpoint, so the Method chips above can't tell them apart. This checkbox looks inside the request body for the word 'mutation' to catch only real writes. Ignore this if your app doesn't use GraphQL.">i</button>
+      </label>
+
+      <div class="set-divider"></div>
+
+      <div class="set-group set-grid">
+        <label class="set-field">
+          <span>Dismiss after</span>
+          <input type="number" id="setDismissMs" min="500" max="120000" step="500" />
+          <span class="set-unit">ms</span>
+          <button type="button" class="set-info" tabindex="0" title="How long a normal (non-error) toast stays on screen before it fades out.">i</button>
+        </label>
+        <label class="set-field">
+          <span>Errors stay</span>
+          <input type="number" id="setErrorDismissMs" min="500" max="120000" step="500" />
+          <span class="set-unit">ms</span>
+          <button type="button" class="set-info" tabindex="0" title="Separate, usually longer timer for toasts flagged as an error — they matter more, so they get more time before they disappear.">i</button>
+        </label>
+        <label class="set-field">
+          <span>Max stack</span>
+          <input type="number" id="setMaxStack" min="1" max="20" step="1" />
+          <button type="button" class="set-info" tabindex="0" title="Cap on toasts visible at once. Anything past this collapses into a '+N more' line instead of covering the page.">i</button>
+        </label>
+        <label class="set-field">
+          <span>Position</span>
+          <select id="setPosition"></select>
+          <button type="button" class="set-info" tabindex="0" title="Which corner of the page the toast stack anchors to. Pick a corner your app's own UI (chat widget, cookie banner) doesn't already use.">i</button>
+        </label>
+      </div>
+
+      <label class="set-row">
+        <input type="checkbox" id="setDedupe" />
+        <span>Collapse repeats into &times;N</span>
+        <button type="button" class="set-info" tabindex="0" title="A repeated call — same method, path and status class — bumps a ×N counter on its existing toast instead of stacking a new one. Turn off to see every single hit as its own toast, e.g. when you're counting how often a polling endpoint fires.">i</button>
+      </label>
+      <label class="set-row">
+        <input type="checkbox" id="setBodyPeek" />
+        <span>Show body preview in the toast <span class="set-hint-inline">without clicking</span></span>
+        <button type="button" class="set-info" tabindex="0" title="Shows the first ~120 characters of the response body right in the collapsed toast, flattened to one line. Click the toast for the full, pretty-printed body regardless of this setting.">i</button>
+      </label>
+
+      <div class="set-actions">
+        <button type="button" id="setTestToast" class="mini-btn" title="Preview a toast on the page right now, whatever the filters say">Send test toast</button>
+        <button type="button" id="setReset" class="mini-btn">Reset to defaults</button>
+      </div>
+    </div>
   </div>
 
   <div id="decoderPanel" class="decoder-panel" hidden>
@@ -132,9 +245,15 @@
     <p class="empty-hint">Reload the page to capture its load-time API calls. Chrome pages (chrome://, Web Store) can't be captured.</p>
   </div>
 
+  <div id="filterEmpty" class="empty">
+    <p class="empty-title">No requests match this filter</p>
+    <p class="empty-hint">Clear the search box or the checkboxes above to see everything again.</p>
+  </div>
+
   <script src="lz-string.js"></script>
   <script src="decoders.js"></script>
   <script src="css-format.js"></script>
+  <script src="net-format.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

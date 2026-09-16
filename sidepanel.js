@@ -6,13 +6,13 @@
 
   const listEl = document.getElementById('list');
   const emptyEl = document.getElementById('empty');
+  const filterEmptyEl = document.getElementById('filterEmpty');
   const countEl = document.getElementById('count');
   const pulseEl = document.getElementById('pulse');
   const filterEl = document.getElementById('filter');
   const errorsOnlyEl = document.getElementById('errorsOnly');
   const apiOnlyEl = document.getElementById('apiOnly');
   const showLogsEl = document.getElementById('showLogs');
-  const toastApiEl = document.getElementById('toastApi');
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
 
@@ -22,6 +22,10 @@
   let sessions = [];
   let paused = false;
   let pulseTimer = null;
+
+  // Drawer panels register here so opening one closes the rest instead of
+  // stacking. Fullscreen isn't part of this group — it's a full overlay.
+  const slidePanels = [];
 
   // ponytail: history is kept in sidepanel memory. If the sidepanel is closed, history is lost. Upgrade path: use chrome.storage.session or background service worker.
   function buildSeparatorContent(el, url, timestamp, isCurrent = true) {
@@ -221,14 +225,155 @@
     chrome.storage.local.set({ netlensCustomDecoders: customDecoders });
   }
 
-  // Read by content.js on every page so the toast fires with the panel closed.
+  // --------------------------------------------------------- toast settings
+  // Read by content.js on every page, so the toast fires with the panel closed.
+  // The rules live in net-format.js and are shared with that content script.
+  let toastSettings = normalizeToastSettings(null);
+
+  const setEls = {
+    enabled: document.getElementById('setEnabled'),
+    slowMs: document.getElementById('setSlowMs'),
+    urlMatch: document.getElementById('setUrlMatch'),
+    gqlMutationsOnly: document.getElementById('setGqlMutationsOnly'),
+    dismissMs: document.getElementById('setDismissMs'),
+    errorDismissMs: document.getElementById('setErrorDismissMs'),
+    maxStack: document.getElementById('setMaxStack'),
+    position: document.getElementById('setPosition'),
+    dedupe: document.getElementById('setDedupe'),
+    bodyPeek: document.getElementById('setBodyPeek'),
+  };
+  const settingsBody = document.querySelector('.settings-body');
+  const statusChipsEl = document.getElementById('setStatus');
+  const methodChipsEl = document.getElementById('setMethods');
+  const methodGroupChipsEl = document.getElementById('setMethodGroups');
+
+  const STATUS_CHIP_LABELS = { s2xx: '2xx', s3xx: '3xx', s4xx: '4xx', s5xx: '5xx', failed: 'failed' };
+
+  function buildChips(container, keys, label, extraClass) {
+    container.replaceChildren();
+    for (const key of keys) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'set-chip';
+      chip.dataset.key = key;
+      chip.textContent = label(key);
+      if (extraClass) chip.classList.add(extraClass(key));
+      container.appendChild(chip);
+    }
+  }
+
+  const METHOD_GROUP_LABELS = {
+    reads: `Reads (${TOAST_METHOD_GROUPS.reads.join(', ')})`,
+    writes: `Writes (${TOAST_METHOD_GROUPS.writes.join(', ')})`,
+  };
+
+  buildChips(statusChipsEl, TOAST_STATUS_CLASSES, (k) => STATUS_CHIP_LABELS[k], (k) =>
+    k === 's4xx' || k === 's5xx' || k === 'failed' ? 'chip-err' : 'chip-ok');
+  buildChips(methodChipsEl, TOAST_METHODS, (k) => k);
+  buildChips(methodGroupChipsEl, Object.keys(TOAST_METHOD_GROUPS), (k) => METHOD_GROUP_LABELS[k]);
+
+  const methodOn = (key) => toastSettings.methods[key] !== false;
+
+  // Built from TOAST_POSITIONS rather than hardcoded in the HTML, so the
+  // dropdown can never offer a value normalizeToastSettings() wouldn't accept.
+  for (const pos of TOAST_POSITIONS) {
+    const option = document.createElement('option');
+    option.value = pos;
+    option.textContent = pos;
+    setEls.position.appendChild(option);
+  }
+
+  function renderSettings() {
+    const s = toastSettings;
+    setEls.enabled.checked = s.enabled;
+    setEls.slowMs.value = s.slowMs;
+    setEls.urlMatch.value = s.urlMatch;
+    setEls.gqlMutationsOnly.checked = s.gqlMutationsOnly;
+    setEls.dismissMs.value = s.dismissMs;
+    setEls.errorDismissMs.value = s.errorDismissMs;
+    setEls.maxStack.value = s.maxStack;
+    setEls.position.value = s.position;
+    setEls.dedupe.checked = s.dedupe;
+    setEls.bodyPeek.checked = s.bodyPeek;
+    for (const chip of statusChipsEl.children) chip.classList.toggle('on', !!s.status[chip.dataset.key]);
+    for (const chip of methodChipsEl.children) chip.classList.toggle('on', methodOn(chip.dataset.key));
+    // A group chip is 'partial' when the per-method list underneath disagrees
+    // with itself — otherwise expanding it would contradict what it shows.
+    for (const chip of methodGroupChipsEl.children) {
+      const members = TOAST_METHOD_GROUPS[chip.dataset.key];
+      const onCount = members.filter(methodOn).length;
+      chip.classList.toggle('on', onCount > 0);
+      chip.classList.toggle('partial', onCount > 0 && onCount < members.length);
+    }
+    settingsBody.classList.toggle('off', !s.enabled);
+  }
+
+  function saveSettings(patch) {
+    toastSettings = normalizeToastSettings({ ...toastSettings, ...patch });
+    renderSettings();
+    try {
+      chrome.storage.local.set({ netlensToastSettings: toastSettings });
+    } catch {}
+  }
+
   try {
-    chrome.storage.local.get(['netlensToastEnabled'], (res) => {
-      toastApiEl.checked = !!res.netlensToastEnabled;
+    chrome.storage.local.get(['netlensToastSettings'], (res) => {
+      toastSettings = normalizeToastSettings(res && res.netlensToastSettings);
+      renderSettings();
     });
   } catch {}
-  toastApiEl.addEventListener('change', () => {
-    chrome.storage.local.set({ netlensToastEnabled: toastApiEl.checked });
+  renderSettings();
+
+  setEls.enabled.addEventListener('change', () => saveSettings({ enabled: setEls.enabled.checked }));
+  setEls.gqlMutationsOnly.addEventListener('change', () => saveSettings({ gqlMutationsOnly: setEls.gqlMutationsOnly.checked }));
+  setEls.dedupe.addEventListener('change', () => saveSettings({ dedupe: setEls.dedupe.checked }));
+  setEls.bodyPeek.addEventListener('change', () => saveSettings({ bodyPeek: setEls.bodyPeek.checked }));
+  setEls.position.addEventListener('change', () => saveSettings({ position: setEls.position.value }));
+  setEls.urlMatch.addEventListener('input', () => saveSettings({ urlMatch: setEls.urlMatch.value }));
+  for (const key of ['slowMs', 'dismissMs', 'errorDismissMs', 'maxStack']) {
+    // 'change' not 'input': normalize clamps, and clamping mid-keystroke would
+    // fight the typist (typing "1" toward "1500" would snap to the minimum).
+    setEls[key].addEventListener('change', () => saveSettings({ [key]: setEls[key].value }));
+  }
+
+  statusChipsEl.addEventListener('click', (e) => {
+    const chip = e.target.closest('.set-chip');
+    if (!chip) return;
+    saveSettings({ status: { ...toastSettings.status, [chip.dataset.key]: !chip.classList.contains('on') } });
+  });
+  methodChipsEl.addEventListener('click', (e) => {
+    const chip = e.target.closest('.set-chip');
+    if (!chip) return;
+    saveSettings({ methods: { ...toastSettings.methods, [chip.dataset.key]: !chip.classList.contains('on') } });
+  });
+  methodGroupChipsEl.addEventListener('click', (e) => {
+    const chip = e.target.closest('.set-chip');
+    if (!chip) return;
+    // Partial counts as off, so one click on a half-lit group turns all of it
+    // on rather than making you clear the odd one out first.
+    const members = TOAST_METHOD_GROUPS[chip.dataset.key];
+    const turnOn = !members.every(methodOn);
+    const methods = { ...toastSettings.methods };
+    for (const method of members) methods[method] = turnOn;
+    saveSettings({ methods });
+  });
+
+  // Presets write into the same fields the chips edit, so there is one source
+  // of truth and a preset is just a starting point you can then tweak.
+  document.querySelector('.set-presets').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-preset]');
+    if (!btn) return;
+    saveSettings({ ...TOAST_PRESETS[btn.dataset.preset], enabled: true });
+  });
+
+  document.getElementById('setReset').addEventListener('click', () => {
+    toastSettings = normalizeToastSettings(null);
+    saveSettings({});
+  });
+
+  document.getElementById('setTestToast').addEventListener('click', () => {
+    if (currentTabId == null) return;
+    chrome.tabs.sendMessage(currentTabId, { type: 'netlens:toast:test' }, () => { void chrome.runtime.lastError; });
   });
 
   // MV3 extension pages default to a CSP with no 'unsafe-eval', which a
@@ -527,48 +672,8 @@
   }
 
   // ------------------------------------------------------------- helpers
-  function fmtDuration(ms) {
-    if (ms == null) return '';
-    return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(2)}s`;
-  }
-
-  function fmtSize(bytes) {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  function statusClass(d) {
-    if (d.failed || d.status === 0) return 'failed';
-    if (d.status >= 500) return 's5xx';
-    if (d.status >= 400) return 's4xx';
-    if (d.status >= 300) return 's3xx';
-    if (d.status >= 200) return 's2xx';
-    return '';
-  }
-
-  function isError(d) {
-    if (d.kind === 'log') return d.level === 'error';
-    return d.failed || d.status === 0 || d.status >= 400;
-  }
-
-  function isLog(d) {
-    return d.kind === 'log';
-  }
-
-  function isApi(d) {
-    return /json|xml|graphql/i.test(d.contentType || '');
-  }
-
-  function pathOf(url) {
-    try {
-      const u = new URL(url);
-      return u.pathname + u.search;
-    } catch {
-      return url;
-    }
-  }
+  // fmtDuration, fmtSize, statusClass, isError, isLog, isApi and pathOf live in
+  // net-format.js — the page's toast classifies requests with the same rules.
 
   function pulse() {
     if (paused) return;
@@ -578,8 +683,8 @@
   }
 
   function updateCount() {
-    countEl.textContent = String(entries.length);
     emptyEl.classList.toggle('visible', entries.length === 0);
+    applyFilter(); // owns the count badge and the filtered-empty state
   }
 
   function isPinnedToBottom() {
@@ -1133,20 +1238,26 @@
 
   // ------------------------------------------------------------ filtering
   function applyFilter() {
-    const q = filterEl.value.trim().toLowerCase();
+    const qRaw = filterEl.value.trim();
+    const q = qRaw.toLowerCase();
+    const test = qRaw ? buildUrlTest(qRaw) : null;
     const errOnly = errorsOnlyEl.checked;
     const apiOnly = apiOnlyEl.checked;
     const showLogs = showLogsEl.checked;
+    let visibleCount = 0;
     for (const { data, el } of entries) {
       const matchesText =
-        !q || el.dataset.hay.includes(q) || bodyHay(data).includes(q);
+        !test || test(el.dataset.hay) || test(bodyHay(data));
       const matches =
         matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1') &&
         (showLogs || data.kind !== 'log');
       el.style.display = matches ? '' : 'none';
+      if (matches) visibleCount++;
 
       const pathBdo = el.querySelector('.path bdo');
       if (pathBdo) {
+        // Highlighting is literal-substring only; a /regex/ query still
+        // filters correctly above, it just won't paint match spans.
         highlightMatches(pathBdo, matches ? q : '');
       }
 
@@ -1167,6 +1278,11 @@
         session.containerEl.style.display = hasVisible ? '' : 'none';
       }
     }
+
+    // The badge otherwise keeps reading the unfiltered total, so filtering
+    // 200 rows down to zero looked identical to the capture having died.
+    countEl.textContent = visibleCount === entries.length ? String(entries.length) : `${visibleCount} / ${entries.length}`;
+    filterEmptyEl.classList.toggle('visible', entries.length > 0 && visibleCount === 0);
   }
 
   let filterDebounce = null;
@@ -1176,9 +1292,28 @@
   }
 
   filterEl.addEventListener('input', scheduleFilter);
-  errorsOnlyEl.addEventListener('change', applyFilter);
-  apiOnlyEl.addEventListener('change', applyFilter);
-  showLogsEl.addEventListener('change', applyFilter);
+
+  // The query itself stays session-only — reusing yesterday's URL substring
+  // on a different site would just hide everything.
+  function saveFilterFlags() {
+    chrome.storage.local.set({
+      netlensFilterFlags: { errorsOnly: errorsOnlyEl.checked, apiOnly: apiOnlyEl.checked, showLogs: showLogsEl.checked },
+    });
+  }
+  try {
+    chrome.storage.local.get(['netlensFilterFlags'], (res) => {
+      const flags = res && res.netlensFilterFlags;
+      if (!flags) return;
+      errorsOnlyEl.checked = !!flags.errorsOnly;
+      apiOnlyEl.checked = !!flags.apiOnly;
+      showLogsEl.checked = !!flags.showLogs;
+      applyFilter();
+    });
+  } catch {}
+
+  errorsOnlyEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
+  apiOnlyEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
+  showLogsEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
 
   // ------------------------------------------------------------- ingest
   function addEntries(batch) {
@@ -1212,7 +1347,6 @@
       }
     }
 
-    applyFilter();
     updateCount();
     pulse();
     if (pinned) {
@@ -1399,6 +1533,8 @@
   const palettePanel = document.getElementById('palettePanel');
   const palettePanelClose = document.getElementById('palettePanelClose');
   const paletteRefreshBtn = document.getElementById('paletteRefreshBtn');
+  const paletteEyedropperBtn = document.getElementById('paletteEyedropperBtn');
+  const paletteEyedropperResult = document.getElementById('paletteEyedropperResult');
   const paletteBodyEl = document.getElementById('paletteBody');
 
   function paletteNote(text) {
@@ -1478,7 +1614,9 @@
         addCopyButton(colorWrap, res.colors.map((c) => rgbToHex(c.value) || c.value).join('\n'), 'Copy all');
         colorWrap.appendChild(buildColorGrid(res.colors));
       }
-      paletteBodyEl.appendChild(buildInspectSection(`Colours (${res.colors.length})`, true, colorWrap));
+      // Collapsed by default — the eyedropper above covers the common case,
+      // this list is a fallback for when you want every colour in one place.
+      paletteBodyEl.appendChild(buildInspectSection(`Colours (${res.colors.length})`, false, colorWrap));
 
       const fontWrap = document.createElement('div');
       fontWrap.style.position = 'relative';
@@ -1493,6 +1631,7 @@
   if (paletteBtn && palettePanel) {
     const openPalettePanel = () => { openSlidePanel(palettePanel); loadPageStyles(); };
     const closePalettePanel = () => closeSlidePanel(palettePanel);
+    slidePanels.push({ el: palettePanel, close: closePalettePanel });
 
     paletteBtn.addEventListener('click', () => {
       if (palettePanel.hidden) openPalettePanel(); else closePalettePanel();
@@ -1504,7 +1643,36 @@
     });
   }
 
+  if (paletteEyedropperBtn) {
+    paletteEyedropperBtn.addEventListener('click', async () => {
+      if (typeof EyeDropper === 'undefined') {
+        paletteEyedropperResult.hidden = false;
+        paletteEyedropperResult.textContent = "This browser doesn't support the eyedropper API.";
+        return;
+      }
+      try {
+        // Screen-wide, not page-scoped — the side panel window itself is a
+        // valid (if unlikely) target, same as it would be in DevTools.
+        const { sRGBHex } = await new EyeDropper().open();
+        paletteEyedropperResult.hidden = false;
+        paletteEyedropperResult.textContent = '';
+        const box = document.createElement('span');
+        box.className = 'swatch-box';
+        box.style.background = sRGBHex;
+        const label = document.createElement('span');
+        label.textContent = sRGBHex;
+        paletteEyedropperResult.append(box, label);
+        addCopyButton(paletteEyedropperResult, sRGBHex, 'Copy');
+      } catch {
+        // User pressed Escape to cancel — not an error worth surfacing.
+      }
+    });
+  }
+
   function openSlidePanel(panel) {
+    for (const p of slidePanels) {
+      if (p.el !== panel && !p.el.hidden) p.close();
+    }
     panel.hidden = false;
     requestAnimationFrame(() => panel.classList.add('panel-open'));
   }
@@ -1535,6 +1703,7 @@
   if (storageBtn && storagePanel) {
     const openStoragePanel = () => { openSlidePanel(storagePanel); loadStorage(); };
     const closeStoragePanel = () => closeSlidePanel(storagePanel);
+    slidePanels.push({ el: storagePanel, close: closeStoragePanel });
 
     storageBtn.addEventListener('click', () => {
       if (storagePanel.hidden) openStoragePanel(); else closeStoragePanel();
@@ -1684,31 +1853,72 @@
 
   const COLOR_VALUE = /^(#|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\()/i;
 
+  function buildPropLine(prop, value) {
+    const line = document.createElement('span');
+    line.className = 'css-prop-line';
+    const propEl = document.createElement('span');
+    propEl.className = 'css-prop';
+    propEl.textContent = prop;
+    line.append(propEl, document.createTextNode(': '));
+    if (COLOR_VALUE.test(value)) {
+      const swatch = document.createElement('span');
+      swatch.className = 'css-swatch';
+      swatch.style.background = value;
+      if (swatch.style.background) line.appendChild(swatch);
+    }
+    const valEl = document.createElement('span');
+    valEl.className = 'css-val';
+    valEl.textContent = value;
+    line.append(valEl, document.createTextNode(';\n'));
+    return line;
+  }
+
+  // DevTools-style: properties are grouped into collapsible categories instead
+  // of one flat block. Pairs arrive pre-sorted by cssGroupIndex (sortCssProps),
+  // so a group-index change is a category boundary — no re-bucketing needed.
   function buildCssRule(selector, pairs) {
-    const pre = document.createElement('pre');
-    pre.className = 'raw css-block';
+    const wrap = document.createElement('div');
+    wrap.className = 'css-rule';
+
+    const selLine = document.createElement('div');
+    selLine.className = 'css-sel-line';
     const sel = document.createElement('span');
     sel.className = 'css-sel';
     sel.textContent = selector;
-    pre.append(sel, document.createTextNode(' {\n'));
-    for (const [prop, value] of pairs) {
-      const propEl = document.createElement('span');
-      propEl.className = 'css-prop';
-      propEl.textContent = prop;
-      pre.append(document.createTextNode('  '), propEl, document.createTextNode(': '));
-      if (COLOR_VALUE.test(value)) {
-        const swatch = document.createElement('span');
-        swatch.className = 'css-swatch';
-        swatch.style.background = value;
-        if (swatch.style.background) pre.appendChild(swatch);
+    selLine.append(sel, document.createTextNode(' {'));
+    wrap.appendChild(selLine);
+
+    let groupIdx = null;
+    let summary = null;
+    let pre = null;
+    let label = '';
+    let count = 0;
+    for (const pair of pairs) {
+      const idx = cssGroupIndex(pair[0]);
+      if (idx !== groupIdx) {
+        groupIdx = idx;
+        label = cssGroupLabel(pair[0]);
+        count = 0;
+        const bucket = document.createElement('details');
+        bucket.className = 'css-group';
+        bucket.open = true;
+        summary = document.createElement('summary');
+        bucket.appendChild(summary);
+        pre = document.createElement('pre');
+        pre.className = 'raw css-props';
+        bucket.appendChild(pre);
+        wrap.appendChild(bucket);
       }
-      const valEl = document.createElement('span');
-      valEl.className = 'css-val';
-      valEl.textContent = value;
-      pre.append(valEl, document.createTextNode(';\n'));
+      pre.appendChild(buildPropLine(pair[0], pair[1]));
+      count++;
+      summary.textContent = `${label} (${count})`;
     }
-    pre.appendChild(document.createTextNode('}'));
-    return pre;
+
+    const close = document.createElement('div');
+    close.className = 'css-close';
+    close.textContent = '}';
+    wrap.appendChild(close);
+    return wrap;
   }
 
   function stateRuleText(rule) {
@@ -1814,6 +2024,7 @@
 
     const openInspectPanel = () => { openSlidePanel(inspectPanel); startPicking(); };
     const closeInspectPanel = () => { stopPicking(); closeSlidePanel(inspectPanel); };
+    slidePanels.push({ el: inspectPanel, close: closeInspectPanel });
 
     inspectBtn.addEventListener('click', () => {
       if (inspectPanel.hidden) openInspectPanel(); else closeInspectPanel();
@@ -1898,6 +2109,20 @@
     }
   }
 
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  if (settingsBtn && settingsPanel) {
+    const closeSettings = () => closeSlidePanel(settingsPanel);
+    slidePanels.push({ el: settingsPanel, close: closeSettings });
+    settingsBtn.addEventListener('click', () => {
+      if (settingsPanel.hidden) openSlidePanel(settingsPanel); else closeSettings();
+    });
+    document.getElementById('settingsPanelClose').addEventListener('click', closeSettings);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !settingsPanel.hidden) closeSettings();
+    });
+  }
+
   if (decodersBtn && decoderPanel) {
     buildChainStepCheckboxes();
 
@@ -1906,6 +2131,7 @@
       openSlidePanel(decoderPanel);
     };
     const closePanel = () => closeSlidePanel(decoderPanel);
+    slidePanels.push({ el: decoderPanel, close: closePanel });
 
     decodersBtn.addEventListener('click', () => {
       if (decoderPanel.hidden) openPanel(); else closePanel();
