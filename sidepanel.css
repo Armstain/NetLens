@@ -777,3 +777,26 @@ mark.hl {
 }
 .decoder-code:focus { outline: none; border-color: var(--indigo); }
 .decoder-form-actions { display: flex; justify-content: flex-end; }
+
+/* ------------------------------------------------------------- CSS output */
+.css-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.css-block:last-child { margin-bottom: 0; }
+.css-sel { color: var(--emerald); font-weight: 600; }
+.css-prop { color: var(--indigo); }
+.css-val { color: var(--text); }
+.css-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+  margin-right: 5px;
+  vertical-align: baseline;
+}
+.css-cond { color: var(--amber); font-size: 11px; margin-bottom: 4px; }

@@ -591,7 +591,6 @@
     return !scrolledPastContainer && (containerBottom - viewportBottom) < 40;
   }
 
-
   // --------------------------------------------------------- JSON tree UI
   function jsonNode(key, value, forceOpen = false) {
     const isObj = value !== null && typeof value === 'object';
@@ -1431,10 +1430,12 @@
   const inspectPanelClose = document.getElementById('inspectPanelClose');
   const inspectPickBtn = document.getElementById('inspectPickBtn');
   const inspectBodyEl = document.getElementById('inspectBody');
+  let htmlSectionEl = null;
 
   function renderInspectResult(data) {
     if (!inspectBodyEl) return;
     inspectBodyEl.textContent = '';
+    htmlSectionEl = null;
 
     const header = document.createElement('div');
     header.className = 'detail-url';
@@ -1466,8 +1467,35 @@
     }
     inspectBodyEl.appendChild(buildInspectSection('Classes', true, classesRow));
 
-    inspectBodyEl.appendChild(buildInspectSection('Computed style', true,
-      buildDecodedTable(Object.entries(data.computed).map(([key, value]) => ({ key, value })))));
+    const mainRule = [data.selector, collapseShorthands(sortCssProps(data.styles))];
+    const pseudoRules = Object.entries(data.pseudos || {})
+      .map(([pseudo, styles]) => [data.selector + pseudo, collapseShorthands(sortCssProps(styles))]);
+
+    const cssWrap = document.createElement('div');
+    cssWrap.style.position = 'relative';
+    if (data.defaultsUnavailable) {
+      const warn = document.createElement('div');
+      warn.className = 'trunc-note';
+      warn.textContent = '⚠ Page CSP blocked the baseline frame — showing every property, not just authored ones.';
+      cssWrap.appendChild(warn);
+    }
+    // Copy takes the pseudos along even though they are rendered separately —
+    // pasting an ::after that styles an icon without its rule is a broken paste.
+    const allRules = [mainRule, ...pseudoRules];
+    addCopyButton(cssWrap, allRules.map(([sel, pairs]) => cssRuleText(sel, pairs)).join('\n\n'), 'Copy CSS');
+    cssWrap.appendChild(buildCssRule(mainRule[0], mainRule[1]));
+    inspectBodyEl.appendChild(buildInspectSection('CSS', true, cssWrap));
+
+    if (pseudoRules.length) {
+      const pseudoWrap = document.createElement('div');
+      pseudoWrap.style.position = 'relative';
+      addCopyButton(pseudoWrap, pseudoRules.map(([sel, pairs]) => cssRuleText(sel, pairs)).join('\n\n'), 'Copy CSS');
+      for (const [sel, pairs] of pseudoRules) pseudoWrap.appendChild(buildCssRule(sel, pairs));
+      const title = `Pseudo-elements (${pseudoRules.map(([sel]) => sel.slice(data.selector.length)).join(', ')})`;
+      inspectBodyEl.appendChild(buildInspectSection(title, false, pseudoWrap));
+    }
+
+    if (!data.hasHtml) return;
 
     const htmlWrap = document.createElement('div');
     if (data.outerHTMLTruncated) {
@@ -1502,7 +1530,8 @@
 
     htmlBox.append(toggleBtn, prettyPre, rawPre);
     htmlWrap.appendChild(htmlBox);
-    inspectBodyEl.appendChild(buildInspectSection('Outer HTML', false, htmlWrap));
+    htmlSectionEl = buildInspectSection('Outer HTML', false, htmlWrap);
+    inspectBodyEl.appendChild(htmlSectionEl);
   }
 
   function prettyHtml(html) {
@@ -1528,6 +1557,85 @@
     return lines.join('\n');
   }
 
+  // Formatting helpers (sortCssProps, collapseShorthands, cssRuleText) live in
+  // css-format.js so they can be unit-tested outside the browser.
+
+  const COLOR_VALUE = /^(#|rgba?\(|hsla?\(|hwb\(|lab\(|lch\(|oklab\(|oklch\(|color\()/i;
+
+  function buildCssRule(selector, pairs) {
+    const pre = document.createElement('pre');
+    pre.className = 'raw css-block';
+    const sel = document.createElement('span');
+    sel.className = 'css-sel';
+    sel.textContent = selector;
+    pre.append(sel, document.createTextNode(' {\n'));
+    for (const [prop, value] of pairs) {
+      const propEl = document.createElement('span');
+      propEl.className = 'css-prop';
+      propEl.textContent = prop;
+      pre.append(document.createTextNode('  '), propEl, document.createTextNode(': '));
+      if (COLOR_VALUE.test(value)) {
+        const swatch = document.createElement('span');
+        swatch.className = 'css-swatch';
+        swatch.style.background = value;
+        if (swatch.style.background) pre.appendChild(swatch);
+      }
+      const valEl = document.createElement('span');
+      valEl.className = 'css-val';
+      valEl.textContent = value;
+      pre.append(valEl, document.createTextNode(';\n'));
+    }
+    pre.appendChild(document.createTextNode('}'));
+    return pre;
+  }
+
+  function stateRuleText(rule) {
+    let text = cssRuleText(rule.selector, rule.declarations);
+    for (let i = rule.conditions.length - 1; i >= 0; i--) {
+      const indented = text.split('\n').map((line) => '  ' + line).join('\n');
+      text = `${rule.conditions[i]} {\n${indented}\n}`;
+    }
+    return text;
+  }
+
+  function renderStateRules(payload) {
+    if (!inspectBodyEl || !inspectBodyEl.firstChild) return;
+    const rules = payload.rules || [];
+    if (!rules.length && !payload.blocked) return;
+
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    if (payload.blocked) {
+      const note = document.createElement('div');
+      note.className = 'trunc-note';
+      note.textContent = `⚠ ${payload.blocked} stylesheet${payload.blocked === 1 ? '' : 's'} could not be read.`;
+      wrap.appendChild(note);
+    }
+    if (rules.length) {
+      addCopyButton(wrap, rules.map(stateRuleText).join('\n\n'), 'Copy CSS');
+      for (const rule of rules) {
+        if (rule.conditions.length) {
+          const cond = document.createElement('div');
+          cond.className = 'raw css-cond';
+          cond.textContent = rule.conditions.join(' · ');
+          wrap.appendChild(cond);
+        }
+        wrap.appendChild(buildCssRule(rule.selector, rule.declarations));
+      }
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'note storage-empty';
+      empty.textContent = 'No state rules found.';
+      wrap.appendChild(empty);
+    }
+
+    const states = [...new Set(rules.flatMap((r) => r.states))];
+    const title = states.length ? `States (${states.join(', ')})` : 'States';
+    const section = buildInspectSection(title, false, wrap);
+    if (htmlSectionEl && htmlSectionEl.parentNode === inspectBodyEl) inspectBodyEl.insertBefore(section, htmlSectionEl);
+    else inspectBodyEl.appendChild(section);
+  }
+
   function buildInspectSection(title, open, contentEl) {
     const details = document.createElement('details');
     details.className = 'storage-section';
@@ -1542,7 +1650,7 @@
   if (inspectBtn && inspectPanel) {
     const setPicking = (on) => {
       inspectBtn.classList.toggle('active', on);
-      inspectPickBtn.textContent = on ? 'Picking… (Esc to cancel)' : 'Pick element';
+      inspectPickBtn.textContent = on ? 'Hover to inspect, click to lock (Esc)' : 'Pick element';
     };
 
     const showInspectError = (msg) => {
@@ -1596,7 +1704,11 @@
 
     chrome.runtime.onMessage.addListener((msg, sender) => {
       if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
-      if (msg.type === 'netlens:inspect:result') {
+      if (msg.type === 'netlens:inspect:hover') {
+        renderInspectResult(msg.data);
+      } else if (msg.type === 'netlens:inspect:states') {
+        renderStateRules(msg);
+      } else if (msg.type === 'netlens:inspect:result') {
         setPicking(false);
         renderInspectResult(msg.data);
       } else if (msg.type === 'netlens:inspect:cancelled') {
