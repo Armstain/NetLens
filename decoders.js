@@ -235,7 +235,7 @@ function tryDecodeStructure(val, customDecoders) {
     }
     if (parsed && typeof parsed === 'object') {
       let hasDecoded = false;
-      const decodedStruct = JSON.parse(JSON.stringify(parsed));
+      const decodedStruct = structuredClone(parsed);
 
       const recurse = (obj) => {
         if (Array.isArray(obj)) {
