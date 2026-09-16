@@ -1,5 +1,18 @@
 # Changelog
 
+## 6.3
+
+- Reworked the on-page toast into a full settings panel (gear icon): status-class and method chips, a slow-call threshold, URL substring/regex match, GraphQL mutations-only mode, dismiss timers, max stack size, corner position, dedupe toggle, response-body preview, presets, and a test-toast button to preview it without live traffic.
+- Method chips are grouped as Reads (GET, HEAD) and Writes (POST, PUT, PATCH, DELETE), with per-verb chips available behind a disclosure. Dropped the OPTIONS chip — a CORS preflight never reaches the patched `fetch`/`XHR`, so it could never have matched anything.
+- Fixed the toast silently missing network failures: a failed `fetch` carries no `contentType`, so the old content-type check alone would never catch a dead endpoint, a CORS block, or an offline request.
+- Toast is rendered in a shadow root, immune to page CSS. Repeated identical calls collapse into one toast with a `×N` counter; the stack caps at a configurable size; clicking a toast expands it into a card with the pretty-printed response body and a copy button; Esc clears the stack.
+- Element inspector's CSS output is now grouped into collapsible categories (Position, Flex & Grid, Box Model, Typography, Appearance, Motion & Interaction, Other), matching how DevTools organizes computed styles.
+- Added a screen-wide colour eyedropper to the Page Styles panel (native `EyeDropper` API); the full colour list is now collapsed by default in favor of it.
+- Fixed the five drawer panels (inspect/palette/storage/decoders/settings) stacking on top of each other instead of one replacing another.
+- "Errors only" / "API only" / "Console logs" filter checkboxes now persist across sessions instead of resetting every time the panel opens.
+- Fixed the request-count badge showing the unfiltered total even when a filter hid every row, which looked identical to the capture having died. It now shows "N / total" when anything is hidden, with a distinct "no requests match this filter" empty state.
+- The request filter box now accepts a `/regex/` pattern in addition to plain substring text.
+
 ## 6.2
 
 - Element inspector now reports the CSS the page actually authored, instead of ten fixed properties: every computed property is diffed against a pristine element of the same tag in an isolated frame, so browser defaults drop out.
