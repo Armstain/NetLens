@@ -6,6 +6,51 @@
   const RING_SIZE = 200;
   let buffer = [];
 
+  // ----------------------------------------------------------- api toast
+  // Rendered here (not the side panel) so it fires even with the panel
+  // closed — this listener already sees every batch regardless.
+  let toastEnabled = false;
+  try {
+    chrome.storage.local.get(['netlensToastEnabled'], (res) => { toastEnabled = !!res.netlensToastEnabled; });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.netlensToastEnabled) toastEnabled = !!changes.netlensToastEnabled.newValue;
+    });
+  } catch {}
+
+  function isApiEntry(d) {
+    return /json|xml|graphql/i.test(d.contentType || '');
+  }
+
+  let toastContainer = null;
+  function ensureToastContainer() {
+    if (toastContainer && toastContainer.isConnected) return toastContainer;
+    toastContainer = document.createElement('div');
+    toastContainer.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;' +
+      'display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;' +
+      'font:12px ui-monospace,monospace;';
+    document.documentElement.appendChild(toastContainer);
+    return toastContainer;
+  }
+
+  function showApiToast(d) {
+    const ok = d.status >= 200 && d.status < 400;
+    const el = document.createElement('div');
+    el.style.cssText = `pointer-events:none;max-width:420px;padding:6px 10px;border-radius:6px;` +
+      `background:#161b22;color:#e6edf3;border:1px solid ${ok ? '#238636' : '#da3633'};` +
+      `box-shadow:0 2px 8px rgba(0,0,0,0.4);opacity:0;transform:translateY(4px);` +
+      `transition:opacity 0.15s,transform 0.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
+    let path;
+    try { path = new URL(d.url).pathname; } catch { path = d.url; }
+    el.textContent = `${d.method} ${d.status || '—'} ${path}`;
+    ensureToastContainer().appendChild(el);
+    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+    setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(4px)';
+      setTimeout(() => el.remove(), 200);
+    }, 4000);
+  }
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
@@ -13,6 +58,12 @@
 
     buffer.push(...data.batch);
     if (buffer.length > RING_SIZE) buffer = buffer.slice(-RING_SIZE);
+
+    if (toastEnabled) {
+      for (const entry of data.batch) {
+        if (isApiEntry(entry)) showApiToast(entry);
+      }
+    }
 
     try {
       chrome.runtime.sendMessage({ type: 'netlens:batch', batch: data.batch }, () => {

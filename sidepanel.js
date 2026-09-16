@@ -12,6 +12,7 @@
   const errorsOnlyEl = document.getElementById('errorsOnly');
   const apiOnlyEl = document.getElementById('apiOnly');
   const showLogsEl = document.getElementById('showLogs');
+  const toastApiEl = document.getElementById('toastApi');
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
 
@@ -219,6 +220,16 @@
   function saveCustomDecoders() {
     chrome.storage.local.set({ netlensCustomDecoders: customDecoders });
   }
+
+  // Read by content.js on every page so the toast fires with the panel closed.
+  try {
+    chrome.storage.local.get(['netlensToastEnabled'], (res) => {
+      toastApiEl.checked = !!res.netlensToastEnabled;
+    });
+  } catch {}
+  toastApiEl.addEventListener('change', () => {
+    chrome.storage.local.set({ netlensToastEnabled: toastApiEl.checked });
+  });
 
   // MV3 extension pages default to a CSP with no 'unsafe-eval', which a
   // Worker created here would inherit — new Function() would throw. The
@@ -590,6 +601,7 @@
     const scrolledPastContainer = listEl.scrollTop > containerBottom;
     return !scrolledPastContainer && (containerBottom - viewportBottom) < 40;
   }
+
 
   // --------------------------------------------------------- JSON tree UI
   function jsonNode(key, value, forceOpen = false) {
