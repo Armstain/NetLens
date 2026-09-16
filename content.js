@@ -8,48 +8,320 @@
 
   // ----------------------------------------------------------- api toast
   // Rendered here (not the side panel) so it fires even with the panel
-  // closed — this listener already sees every batch regardless.
-  let toastEnabled = false;
+  // closed — this listener already sees every batch regardless. Which entries
+  // qualify is decided by toastMatch() in net-format.js, shared with the panel.
+  const TOAST_BODY_LINES = 40;
+  const TOAST_BODY_CHARS = 4000;
+  const TOAST_PEEK_CHARS = 120;
+
+  let toastSettings = normalizeToastSettings(null);
   try {
-    chrome.storage.local.get(['netlensToastEnabled'], (res) => { toastEnabled = !!res.netlensToastEnabled; });
+    chrome.storage.local.get(['netlensToastSettings'], (res) => {
+      toastSettings = normalizeToastSettings(res && res.netlensToastSettings);
+      applyToastPosition();
+    });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.netlensToastEnabled) toastEnabled = !!changes.netlensToastEnabled.newValue;
+      if (area !== 'local' || !changes.netlensToastSettings) return;
+      toastSettings = normalizeToastSettings(changes.netlensToastSettings.newValue);
+      if (!toastSettings.enabled) clearToasts();
+      else applyToastPosition();
     });
   } catch {}
 
-  function isApiEntry(d) {
-    return /json|xml|graphql/i.test(d.contentType || '');
+  const TOAST_CSS = `
+    :host { all: initial; }
+    .stack {
+      position: fixed; z-index: 2147483647;
+      display: flex; gap: 6px;
+      pointer-events: none;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    /* The stack is anchored to its corner and grows inward, so settled toasts
+       stay put and only the newest one appears at the growing edge. */
+    .stack.bottom-right, .stack.bottom-left { bottom: 16px; flex-direction: column-reverse; }
+    .stack.top-right, .stack.top-left { top: 16px; flex-direction: column; }
+    .stack.bottom-right, .stack.top-right { right: 16px; align-items: flex-end; }
+    .stack.bottom-left, .stack.top-left { left: 16px; align-items: flex-start; }
+    .toast {
+      pointer-events: auto; cursor: pointer; box-sizing: border-box;
+      max-width: 420px; padding: 6px 10px;
+      background: #161b22; color: #e6edf3;
+      border: 1px solid #30363d; border-left-width: 3px; border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      opacity: 0; transform: translateY(4px);
+      transition: opacity .15s, transform .15s;
+    }
+    .toast.in { opacity: 1; transform: translateY(0); }
+    .toast:hover { border-color: #484f58; }
+    .toast.s2xx, .toast.s3xx { border-left-color: #238636; }
+    .toast.s4xx, .toast.s5xx, .toast.failed { border-left-color: #da3633; }
+    .toast.slow { border-left-color: #d29922; }
+    .line { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+    .peek {
+      color: #8b949e; margin-top: 2px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .toast.open .peek { display: none; }
+    .path { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .method { color: #79c0ff; }
+    .status { color: #8b949e; }
+    .toast.s4xx .status, .toast.s5xx .status, .toast.failed .status { color: #ff7b72; }
+    .meta { color: #8b949e; }
+    .toast.slow .dur { color: #d29922; }
+    .count { color: #d29922; }
+    .count:empty { display: none; }
+    .more { pointer-events: none; color: #8b949e; padding: 2px 10px; }
+    .card { display: none; margin-top: 6px; max-width: 420px; }
+    .toast.open { cursor: default; max-width: 520px; }
+    .toast.open .card { display: block; }
+    .toast.open .path { white-space: normal; overflow-wrap: anywhere; }
+    .url { color: #8b949e; font-size: 11px; overflow-wrap: anywhere; margin-bottom: 6px; }
+    pre {
+      margin: 0; max-height: 320px; overflow: auto; padding: 6px 8px;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .note { color: #8b949e; margin-top: 4px; font-size: 11px; }
+    .btns { display: flex; gap: 6px; margin-top: 6px; }
+    button {
+      font: inherit; color: #e6edf3; background: #21262d;
+      border: 1px solid #30363d; border-radius: 4px; padding: 2px 8px; cursor: pointer;
+    }
+    button:hover { background: #30363d; }
+    @media (prefers-reduced-motion: reduce) {
+      .toast { transition: none; transform: none; }
+      .toast.in { transform: none; }
+    }
+  `;
+
+  let toastRoot = null;
+  let toastStack = null;
+  let moreEl = null;
+  let suppressed = 0;
+  // Keyed by method + path + status class, so a 200 that turns into a 500 opens
+  // a fresh toast instead of quietly incrementing the old one.
+  const liveToasts = new Map();
+
+  // ponytail: an `html { transform }` re-parents position:fixed and lands the
+  // stack in the wrong corner (cosmetic, still readable). Upgrade path: the
+  // probe calibration in positionOverlay() below.
+  function ensureToastRoot() {
+    if (toastStack && toastStack.isConnected) return toastStack;
+    const host = document.createElement('div');
+    toastRoot = host.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent = TOAST_CSS;
+    toastStack = document.createElement('div');
+    toastStack.className = `stack ${toastSettings.position}`;
+    toastStack.setAttribute('aria-live', 'polite');
+    toastRoot.append(style, toastStack);
+    document.documentElement.appendChild(host);
+    return toastStack;
   }
 
-  let toastContainer = null;
-  function ensureToastContainer() {
-    if (toastContainer && toastContainer.isConnected) return toastContainer;
-    toastContainer = document.createElement('div');
-    toastContainer.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483647;' +
-      'display:flex;flex-direction:column-reverse;gap:6px;pointer-events:none;' +
-      'font:12px ui-monospace,monospace;';
-    document.documentElement.appendChild(toastContainer);
-    return toastContainer;
+  function applyToastPosition() {
+    if (toastStack) toastStack.className = `stack ${toastSettings.position}`;
   }
 
-  function showApiToast(d) {
-    const ok = d.status >= 200 && d.status < 400;
-    const el = document.createElement('div');
-    el.style.cssText = `pointer-events:none;max-width:420px;padding:6px 10px;border-radius:6px;` +
-      `background:#161b22;color:#e6edf3;border:1px solid ${ok ? '#238636' : '#da3633'};` +
-      `box-shadow:0 2px 8px rgba(0,0,0,0.4);opacity:0;transform:translateY(4px);` +
-      `transition:opacity 0.15s,transform 0.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;`;
-    let path;
-    try { path = new URL(d.url).pathname; } catch { path = d.url; }
-    el.textContent = `${d.method} ${d.status || '—'} ${path}`;
-    ensureToastContainer().appendChild(el);
-    requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; });
+  function clearToasts() {
+    for (const entry of liveToasts.values()) clearTimeout(entry.timer);
+    liveToasts.clear();
+    suppressed = 0;
+    moreEl = null;
+    if (toastStack) toastStack.replaceChildren();
+  }
+
+  function armDismiss(entry) {
+    clearTimeout(entry.timer);
+    if (entry.el.classList.contains('open')) return;
+    const ms = isError(entry.data) ? toastSettings.errorDismissMs : toastSettings.dismissMs;
+    entry.timer = setTimeout(() => dismiss(entry), ms);
+  }
+
+  function dismiss(entry) {
+    clearTimeout(entry.timer);
+    liveToasts.delete(entry.key);
+    entry.el.classList.remove('in');
     setTimeout(() => {
-      el.style.opacity = '0';
-      el.style.transform = 'translateY(4px)';
-      setTimeout(() => el.remove(), 200);
-    }, 4000);
+      entry.el.remove();
+      if (!liveToasts.size) {
+        suppressed = 0;
+        if (moreEl) { moreEl.remove(); moreEl = null; }
+      }
+    }, 200);
   }
+
+  function bodyPreview(d) {
+    const raw = d.responseBody;
+    if (typeof raw !== 'string' || !raw) return { text: '(no body captured)', note: '' };
+    let text = raw;
+    try { text = JSON.stringify(JSON.parse(raw), null, 2); } catch {}
+    const notes = [];
+    const lines = text.split('\n');
+    if (lines.length > TOAST_BODY_LINES) {
+      text = lines.slice(0, TOAST_BODY_LINES).join('\n');
+      notes.push(`${lines.length - TOAST_BODY_LINES} more lines`);
+    }
+    if (text.length > TOAST_BODY_CHARS) text = text.slice(0, TOAST_BODY_CHARS);
+    // `truncated` means injected.js already cut the body at capture time, so the
+    // real response is bigger than anything we hold.
+    if (d.truncated) notes.push(`captured body truncated, ${fmtSize(d.responseSize)} total`);
+    return { text, note: notes.join(' · ') };
+  }
+
+  // One line, whitespace flattened — the card is where the real body lives.
+  function peekOf(d) {
+    const raw = typeof d.responseBody === 'string' ? d.responseBody.trim() : '';
+    if (!raw) return '';
+    const flat = raw.replace(/\s+/g, ' ');
+    return flat.length > TOAST_PEEK_CHARS ? `${flat.slice(0, TOAST_PEEK_CHARS)}…` : flat;
+  }
+
+  function buildCard(d) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const url = document.createElement('div');
+    url.className = 'url';
+    url.textContent = d.url;
+    card.appendChild(url);
+
+    const { text, note } = bodyPreview(d);
+    const pre = document.createElement('pre');
+    pre.textContent = text;
+    card.appendChild(pre);
+
+    if (note) {
+      const noteEl = document.createElement('div');
+      noteEl.className = 'note';
+      noteEl.textContent = note;
+      card.appendChild(noteEl);
+    }
+
+    const btns = document.createElement('div');
+    btns.className = 'btns';
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy body';
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        // Rejects on insecure origins and when the document is not focused.
+        await navigator.clipboard.writeText(d.responseBody || '');
+        copyBtn.textContent = 'Copied';
+      } catch {
+        copyBtn.textContent = 'Copy failed';
+      }
+      setTimeout(() => { copyBtn.textContent = 'Copy body'; }, 1500);
+    });
+    btns.appendChild(copyBtn);
+    card.appendChild(btns);
+    return card;
+  }
+
+  function updateMore() {
+    if (!suppressed) {
+      if (moreEl) { moreEl.remove(); moreEl = null; }
+      return;
+    }
+    if (!moreEl) {
+      moreEl = document.createElement('div');
+      moreEl.className = 'more';
+      ensureToastRoot().prepend(moreEl);
+    }
+    moreEl.textContent = `+${suppressed} more`;
+  }
+
+  let toastSeq = 0;
+
+  function showToast(d) {
+    const path = pathOf(d.url);
+    // With dedupe off every call gets its own row, so the key must never collide.
+    const key = toastSettings.dedupe
+      ? `${d.method} ${path} ${statusClass(d)}`
+      : `#${++toastSeq}`;
+    const existing = liveToasts.get(key);
+    if (existing) {
+      existing.hits++;
+      existing.countEl.textContent = `×${existing.hits}`;
+      // Keep the body the user is already reading; otherwise the card should
+      // show the latest response, not the one that opened the toast.
+      if (!existing.el.classList.contains('open')) {
+        existing.data = d;
+        const peek = existing.el.querySelector('.peek');
+        if (peek) peek.textContent = peekOf(d);
+      }
+      armDismiss(existing);
+      return;
+    }
+
+    if (liveToasts.size >= toastSettings.maxStack) {
+      suppressed++;
+      updateMore();
+      return;
+    }
+
+    const stack = ensureToastRoot();
+    const el = document.createElement('div');
+    el.className = `toast ${statusClass(d)}`;
+    if (toastSettings.slowMs > 0 && d.duration > toastSettings.slowMs && !isError(d)) el.classList.add('slow');
+
+    const line = document.createElement('div');
+    line.className = 'line';
+    const method = document.createElement('span');
+    method.className = 'method';
+    method.textContent = d.method;
+    const status = document.createElement('span');
+    status.className = 'status';
+    status.textContent = d.failed || d.status === 0 ? (d.statusText || 'failed') : String(d.status);
+    const pathEl = document.createElement('span');
+    pathEl.className = 'path';
+    pathEl.textContent = path;
+    const countEl = document.createElement('span');
+    countEl.className = 'count';
+    const meta = document.createElement('span');
+    meta.className = 'meta';
+    const dur = document.createElement('span');
+    dur.className = 'dur';
+    dur.textContent = fmtDuration(d.duration);
+    const size = fmtSize(d.responseSize);
+    meta.append(dur, document.createTextNode(size ? ` ${size}` : ''));
+    line.append(method, status, pathEl, countEl, meta);
+    el.appendChild(line);
+
+    if (toastSettings.bodyPeek) {
+      const peekText = peekOf(d);
+      if (peekText) {
+        const peek = document.createElement('div');
+        peek.className = 'peek';
+        peek.textContent = peekText;
+        el.appendChild(peek);
+      }
+    }
+
+    const entry = { key, el, data: d, hits: 1, countEl, timer: null };
+
+    el.addEventListener('click', () => {
+      if (el.classList.contains('open')) return;
+      el.classList.add('open');
+      clearTimeout(entry.timer);
+      el.appendChild(buildCard(entry.data));
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.addEventListener('click', (e) => { e.stopPropagation(); dismiss(entry); });
+      el.querySelector('.btns').appendChild(close);
+    });
+
+    liveToasts.set(key, entry);
+    stack.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    armDismiss(entry);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && liveToasts.size) clearToasts();
+  }, true);
 
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
@@ -59,10 +331,8 @@
     buffer.push(...data.batch);
     if (buffer.length > RING_SIZE) buffer = buffer.slice(-RING_SIZE);
 
-    if (toastEnabled) {
-      for (const entry of data.batch) {
-        if (isApiEntry(entry)) showApiToast(entry);
-      }
+    for (const entry of data.batch) {
+      if (toastMatch(entry, toastSettings)) showToast(entry);
     }
 
     try {
@@ -113,7 +383,24 @@
       sendResponse(scanPageStyles());
       return;
     }
+    if (msg.type === 'netlens:toast:test') {
+      // Bypasses toastMatch()/enabled on purpose — this is how a dev previews
+      // the toast's look while it's still off or mid-tune, not live traffic.
+      showToast(TEST_TOASTS[testToastIdx]);
+      testToastIdx = (testToastIdx + 1) % TEST_TOASTS.length;
+      sendResponse({ ok: true });
+      return;
+    }
   });
+
+  let testToastIdx = 0;
+  const TEST_TOASTS = [
+    { kind: 'fetch', method: 'GET', url: location.origin + '/api/users?page=1', status: 200, duration: 142, contentType: 'application/json', responseSize: 4312, responseBody: JSON.stringify({ users: [{ id: 1, name: 'Ada' }, { id: 2, name: 'Linus' }], total: 2 }) },
+    { kind: 'fetch', method: 'POST', url: location.origin + '/api/orders', status: 201, duration: 88, contentType: 'application/json', responseSize: 96, responseBody: JSON.stringify({ id: 4417, status: 'pending' }) },
+    { kind: 'fetch', method: 'GET', url: location.origin + '/api/reports/22', status: 200, duration: 1840, contentType: 'application/json', responseSize: 93184, responseBody: JSON.stringify({ rows: 500 }) },
+    { kind: 'fetch', method: 'POST', url: location.origin + '/api/checkout', status: 422, statusText: 'Unprocessable Entity', duration: 210, contentType: 'application/json', responseSize: 58, responseBody: JSON.stringify({ error: 'card_declined' }) },
+    { kind: 'fetch', method: 'GET', url: location.origin + '/api/login', status: 0, statusText: 'Failed to fetch', failed: true, duration: 30 },
+  ];
 
   // ------------------------------------------------------------- inspector
   const MAX_HTML = 20 * 1024;
