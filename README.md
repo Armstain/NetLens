@@ -19,6 +19,15 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 - Filter by URL/method/headers/body (always searched, no toggle), errors-only, pause, clear
 - Copy any request as a `curl` command or a `fetch()` snippet
 
+## Inspect CSS
+
+- Click the crosshair in the top bar, then hover anything on the page — the side panel shows its CSS live, and clicking locks the element so you can read and copy it
+- Shows only what the page actually authored: every computed property is diffed against a pristine element of the same tag in an isolated frame, so the ~340 properties a browser reports collapse to the handful someone wrote
+- Output is a pasteable rule, grouped by concern, with four-sided longhands collapsed (`margin`, `padding`, `inset`, `border-radius`, `border`) and inline colour swatches
+- `::before` / `::after` get their own section, and `:hover` / `:focus` / `:active` rules are read straight from the page's stylesheets, since a computed style can't show a state that isn't active. Cross-origin stylesheets are fetched by the service worker and re-parsed; any that stay unreadable are reported, not silently skipped
+- State rules keep their `@media` / `@supports` / `@container` conditions, and copying wraps the rule in them
+- The palette icon scans the whole page for fonts and colours in use, with usage counts, a click-to-copy hex palette, and the sizes and weights each family appears at
+
 ## Decode
 
 - Query params, path segments, headers, and bodies are auto-scanned and decoded wherever a known encoding is detected
