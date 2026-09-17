@@ -18,6 +18,9 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 - Status rail on every row: emerald = 2xx, amber = 3xx, red = 4xx/5xx/failed
 - Filter by URL/method/headers/body (always searched, no toggle) — plain text or a `/regex/` pattern — plus errors-only, pause, clear. Filter checkboxes persist across sessions
 - Copy any request as a `curl` command or a `fetch()` snippet
+- Replay any captured request: edit the URL, headers and body, resend it from the page itself so it carries the real session, and diff the new response against the original
+- Captures `WebSocket` and `EventSource` traffic too, grouped one row per connection with frames nested underneath
+- Saved sessions persist to IndexedDB, so history survives closing the panel, navigating away and closing the tab
 
 ## Inspect CSS
 
@@ -47,13 +50,19 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 - The `fetch` wrapper records metadata synchronously and calls through immediately — the page receives the untouched promise
 - Response bodies are read from `response.clone()` in a microtask *after* the page has its response; `clone()` shares the stream buffer
 - Non-text content types (images, binaries) are never read
-- If the panel is closed, capture costs one array push per request — no messaging
+- With the panel closed there is no receiver, but `sendMessage` still clones the whole batch before finding that out, so sending backs off after a failed attempt and resumes the moment the panel speaks. Nothing is lost: the panel pulls the ring buffer when it opens
+- The ring buffer caps on total bytes as well as entry count, so it can't pin tens of megabytes of response bodies in the page's process
+- A request burst is flushed early rather than cloned as one giant message
+- Socket frames are rate limited to 60/sec and capped at 8KB each — a game or trading feed must not make NetLens the performance problem it exists to find
 
 ## Known limits
 
 - Can't capture on `chrome://` pages or the Chrome Web Store
 - Misses requests from service workers and other extensions
 - `FormData`/`Blob` request bodies are shown as placeholders, not serialized
+- Binary socket frames are recorded by size, not decoded — reading a `Blob` back is asynchronous and costs more than the capture is worth at frame rates
+- Named `EventSource` events are only captured for types the page itself subscribes to; there is no way to enumerate the rest
+- Frame payloads aren't reached by the deep body search, which covers request and response bodies
 
 ## License
 

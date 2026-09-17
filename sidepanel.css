@@ -1323,3 +1323,60 @@ mark.hl {
   25% { background: rgba(129, 140, 248, 0.18); }
 }
 .jump-flash { animation: jump-flash 900ms ease; }
+
+/* ---------------------------------------------------------- sockets */
+.method.m-ws { color: #22d3ee; }
+
+.socket-counts {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  min-width: 56px;
+}
+
+.frames {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.frames:empty::after {
+  content: 'No frames captured yet.';
+  color: var(--faint);
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.frame { border-bottom: 1px solid var(--border); }
+.frame:last-child { border-bottom: none; }
+
+.frame > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.frame > summary::-webkit-details-marker { display: none; }
+.frame > summary:hover { background: var(--surface-2); }
+
+.frame-time { color: var(--faint); font-size: 10px; flex: none; }
+.frame-arrow { flex: none; font-weight: 700; }
+.frame-send .frame-arrow { color: var(--amber); }
+.frame-recv .frame-arrow { color: var(--emerald); }
+
+.frame-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.frame-body { padding: 2px 0 6px 22px; }

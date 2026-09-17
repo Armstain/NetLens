@@ -1032,8 +1032,167 @@
     container.appendChild(inner);
   }
 
+  // -------------------------------------------------------------- sockets
+  // A long-lived connection can outlive thousands of frames. The data model
+  // keeps every frame as its own entry so it persists and restores like
+  // anything else; only the DOM is capped.
+  const MAX_SOCKET_FRAMES = 200;
+  const socketRows = new Map();
+
+  function socketLabel(d) {
+    return d.transport === 'sse' ? 'SSE' : 'WS';
+  }
+
+  function updateSocketStatus(rec, d) {
+    const st = d.event || 'open';
+    rec.statusEl.textContent = st === 'connecting' ? '···' : st;
+    rec.row.classList.remove('s2xx', 's3xx', 'failed');
+    const bad = st === 'error' || (st === 'close' && d.wasClean === false);
+    if (bad) {
+      rec.row.classList.add('failed');
+      rec.row.dataset.err = '1';
+    } else if (st === 'close') {
+      rec.row.classList.add('s3xx');
+    } else if (st === 'open') {
+      rec.row.classList.add('s2xx');
+    }
+    if (st === 'close' && typeof d.code === 'number') {
+      rec.statusEl.title = `code ${d.code}${d.reason ? ` — ${d.reason}` : ''}`;
+    }
+  }
+
+  function updateSocketCounts(rec) {
+    rec.countsEl.textContent = `↑${rec.sent} ↓${rec.recv}`;
+  }
+
+  function buildFrameEl(d) {
+    const wrap = document.createElement('details');
+    wrap.className = `frame frame-${d.dir}`;
+
+    const sum = document.createElement('summary');
+    const time = document.createElement('span');
+    time.className = 'frame-time';
+    time.textContent = new Date(d.startedAt).toLocaleTimeString([], { hour12: false });
+
+    const arrow = document.createElement('span');
+    arrow.className = 'frame-arrow';
+    arrow.textContent = d.dir === 'send' ? '↑' : '↓';
+
+    const preview = document.createElement('span');
+    preview.className = 'frame-preview';
+    const text = typeof d.data === 'string' ? d.data : '';
+    preview.textContent = (d.eventName ? `[${d.eventName}] ` : '') + text.replace(/\s+/g, ' ').slice(0, 300);
+
+    sum.append(time, arrow, preview);
+    wrap.appendChild(sum);
+
+    const body = document.createElement('div');
+    body.className = 'frame-body';
+    wrap.appendChild(body);
+
+    // A socket that has run all day has hundreds of frames in the DOM already;
+    // rendering every payload up front would cost far more than it is worth.
+    let built = false;
+    wrap.addEventListener('toggle', () => {
+      if (!wrap.open || built) return;
+      built = true;
+      renderBody(body, prettyJson(text) || text, d.truncated);
+    });
+    return wrap;
+  }
+
+  function createSocketRow(d) {
+    const row = document.createElement('div');
+    row.className = 'row socket-row';
+    row.dataset.hay = `${socketLabel(d)} ${d.url || ''}`.toLowerCase();
+    row.dataset.err = '0';
+    row.dataset.api = '1';
+
+    const head = document.createElement('div');
+    head.className = 'row-head';
+    head.tabIndex = 0;
+    head.setAttribute('role', 'button');
+    head.setAttribute('aria-expanded', 'false');
+
+    const badge = document.createElement('span');
+    badge.className = 'method m-ws';
+    badge.textContent = socketLabel(d);
+
+    const path = document.createElement('span');
+    path.className = 'path';
+    const bdo = document.createElement('bdo');
+    bdo.textContent = pathOf(d.url || '');
+    path.appendChild(bdo);
+    path.title = d.url || '';
+
+    const statusEl = document.createElement('span');
+    statusEl.className = 'status';
+
+    const countsEl = document.createElement('span');
+    countsEl.className = 'dur socket-counts';
+
+    head.append(badge, path, statusEl, countsEl);
+    row.appendChild(head);
+
+    const detail = document.createElement('div');
+    detail.className = 'row-detail';
+    const detailInner = document.createElement('div');
+    detailInner.className = 'row-detail-inner';
+    const framesEl = document.createElement('div');
+    framesEl.className = 'frames';
+    detailInner.appendChild(framesEl);
+    detail.appendChild(detailInner);
+    row.appendChild(detail);
+
+    // Not attachRowToggle: frames stream in after the row exists, so there is
+    // no one-shot detail to build lazily.
+    const toggle = () => {
+      const open = row.classList.toggle('open');
+      head.setAttribute('aria-expanded', String(open));
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+
+    const rec = { row, framesEl, statusEl, countsEl, sent: 0, recv: 0 };
+    socketRows.set(d.wsId, rec);
+    updateSocketCounts(rec);
+    return row;
+  }
+
+  // Returns the row element only when it had to be created, so the caller can
+  // add it to the list exactly once.
+  function getOrCreateSocket(d) {
+    const existing = socketRows.get(d.wsId);
+    if (existing) return { rec: existing, createdEl: null };
+    // A frame can arrive with no connection row behind it: the ring buffer
+    // trimmed the open, or the panel attached mid-stream.
+    const createdEl = createSocketRow(d);
+    return { rec: socketRows.get(d.wsId), createdEl };
+  }
+
+  function buildSocketRow(d) {
+    const { rec, createdEl } = getOrCreateSocket(d);
+    updateSocketStatus(rec, d);
+    return createdEl;
+  }
+
+  function buildFrameRow(d) {
+    const { rec, createdEl } = getOrCreateSocket(d);
+    if (d.dir === 'send') rec.sent++; else rec.recv++;
+    updateSocketCounts(rec);
+    rec.framesEl.appendChild(buildFrameEl(d));
+    while (rec.framesEl.children.length > MAX_SOCKET_FRAMES) {
+      rec.framesEl.removeChild(rec.framesEl.firstChild);
+    }
+    return createdEl;
+  }
+
   function buildRow(d) {
     if (isLog(d)) return buildLogRow(d);
+    if (d.kind === 'ws') return buildSocketRow(d);
+    if (d.kind === 'wsframe') return buildFrameRow(d);
     const row = document.createElement('div');
     row.className = `row ${statusClass(d)}`;
     row.dataset.hay = `${d.method} ${d.url}`.toLowerCase();
@@ -1647,6 +1806,9 @@
 
     for (const d of batch) {
       const el = buildRow(d);
+      // Socket lifecycle events and frames fold into a connection row that
+      // already exists, so there is nothing new to place in the list.
+      if (!el) continue;
       const entry = { data: d, el };
       entries.push(entry);
       currentSession.entries.push(entry);
@@ -1709,6 +1871,7 @@
     entries = [];
     sessions = [];
     restoredIds.clear();
+    socketRows.clear();
     if (diagBadge) diagBadge.hidden = true;
     listEl.textContent = '';
     updateCount();
@@ -2224,6 +2387,7 @@
     const frag = document.createDocumentFragment();
     for (const d of datas) {
       const el = buildRow(d);
+      if (!el) continue;
       el.classList.add('archived');
       // Restored rows join `entries` so the filter and search reach them, but
       // not `sessions` — the live session must stay the one new captures
