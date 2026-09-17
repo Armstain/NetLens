@@ -398,6 +398,180 @@
     return origSend.apply(this, arguments);
   };
 
+
+  // ------------------------------------------------------- websocket / sse
+  // Frames are small and numerous where bodies are large and rare, so they get
+  // their own, much tighter cap.
+  const MAX_FRAME = 8 * 1024;
+  // A game or trading feed can push hundreds of frames a second. Capturing all
+  // of them would make NetLens the performance problem it exists to find.
+  const FRAME_RATE_LIMIT = 60;
+
+  let frameWindowStart = now();
+  let frameWindowCount = 0;
+  let framesDropped = 0;
+  let wsSeq = 0;
+
+  function frameAllowed() {
+    const t = now();
+    if (t - frameWindowStart > 1000) {
+      if (framesDropped > 0) {
+        enqueue({
+          id: ++seq,
+          kind: 'log',
+          level: 'warn',
+          message: `NetLens: ${framesDropped} socket frame(s) dropped (rate limit)`,
+          args: [],
+          startedAt: Date.now(),
+        });
+      }
+      frameWindowStart = t;
+      frameWindowCount = 0;
+      framesDropped = 0;
+    }
+    frameWindowCount++;
+    if (frameWindowCount > FRAME_RATE_LIMIT) { framesDropped++; return false; }
+    return true;
+  }
+
+  // Reading a Blob back is asynchronous and would cost more than the capture is
+  // worth at frame rates, so binary payloads are recorded by size alone.
+  function serializeFrame(data) {
+    try {
+      if (typeof data === 'string') {
+        const size = data.length;
+        if (size > MAX_FRAME) return { data: data.slice(0, MAX_FRAME), size, truncated: true, binary: false };
+        return { data, size, truncated: false, binary: false };
+      }
+      if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        return { data: `[Blob ${data.size} bytes]`, size: data.size, truncated: false, binary: true };
+      }
+      if (data instanceof ArrayBuffer) {
+        return { data: `[Binary ${data.byteLength} bytes]`, size: data.byteLength, truncated: false, binary: true };
+      }
+      if (ArrayBuffer.isView(data)) {
+        return { data: `[Binary ${data.byteLength} bytes]`, size: data.byteLength, truncated: false, binary: true };
+      }
+      if (data == null) return { data: '', size: 0, truncated: false, binary: false };
+      return { data: String(data), size: 0, truncated: false, binary: false };
+    } catch {
+      return { data: '[unreadable frame]', size: 0, truncated: false, binary: false };
+    }
+  }
+
+  function emitFrame(wsId, transport, url, dir, data, eventName) {
+    if (!wsId || !frameAllowed()) return;
+    const f = serializeFrame(data);
+    enqueue({
+      id: ++seq,
+      kind: 'wsframe',
+      wsId,
+      transport,
+      url,
+      dir,
+      eventName: eventName || null,
+      data: f.data,
+      size: f.size,
+      truncated: f.truncated,
+      binary: f.binary,
+      startedAt: Date.now(),
+    });
+  }
+
+  function emitSocket(wsId, transport, url, event, extra) {
+    enqueue(Object.assign({
+      id: ++seq,
+      kind: 'ws',
+      wsId,
+      transport,
+      url,
+      event,
+      startedAt: Date.now(),
+    }, extra));
+  }
+
+  const OrigWebSocket = window.WebSocket;
+  if (typeof OrigWebSocket === 'function') {
+    // Subclassing rather than proxying keeps `instanceof WebSocket` true and
+    // inherits the READY_STATE constants through the prototype chain, both of
+    // which real code checks.
+    class NetLensWebSocket extends OrigWebSocket {
+      constructor(url, protocols) {
+        super(url, protocols);
+        const wsId = `ws${++wsSeq}`;
+        const absolute = absolutize(url);
+        this.__netlensId = wsId;
+        this.__netlensUrl = absolute;
+        const started = now();
+
+        emitSocket(wsId, 'ws', absolute, 'connecting');
+        this.addEventListener('open', () => {
+          emitSocket(wsId, 'ws', absolute, 'open', { duration: now() - started });
+        });
+        this.addEventListener('message', (e) => emitFrame(wsId, 'ws', absolute, 'recv', e.data));
+        this.addEventListener('close', (e) => {
+          emitSocket(wsId, 'ws', absolute, 'close', {
+            code: e.code,
+            reason: e.reason,
+            wasClean: e.wasClean,
+            duration: now() - started,
+          });
+        });
+        this.addEventListener('error', () => emitSocket(wsId, 'ws', absolute, 'error'));
+      }
+
+      send(data) {
+        try { emitFrame(this.__netlensId, 'ws', this.__netlensUrl, 'send', data); } catch {}
+        return super.send(data);
+      }
+    }
+    window.WebSocket = NetLensWebSocket;
+  }
+
+  const OrigEventSource = window.EventSource;
+  if (typeof OrigEventSource === 'function') {
+    class NetLensEventSource extends OrigEventSource {
+      constructor(url, config) {
+        super(url, config);
+        const wsId = `sse${++wsSeq}`;
+        const absolute = absolutize(url);
+        // Set before any addEventListener call below, because the override
+        // reads it.
+        this.__netlensSeen = new Set();
+        this.__netlensId = wsId;
+        this.__netlensUrl = absolute;
+        const started = now();
+
+        emitSocket(wsId, 'sse', absolute, 'connecting');
+        this.addEventListener('open', () => {
+          emitSocket(wsId, 'sse', absolute, 'open', { duration: now() - started });
+        });
+        this.addEventListener('message', (e) => emitFrame(wsId, 'sse', absolute, 'recv', e.data));
+        this.addEventListener('error', () => emitSocket(wsId, 'sse', absolute, 'error'));
+      }
+
+      // Servers routinely send named events, and those never reach a 'message'
+      // listener. There is no way to enumerate them, so shadow each type the
+      // page itself subscribes to — once, however many listeners it adds.
+      addEventListener(type, listener, options) {
+        if (type !== 'message' && type !== 'open' && type !== 'error'
+            && this.__netlensSeen && !this.__netlensSeen.has(type)) {
+          this.__netlensSeen.add(type);
+          super.addEventListener(type, (e) => {
+            emitFrame(this.__netlensId, 'sse', this.__netlensUrl, 'recv', e.data, type);
+          });
+        }
+        return super.addEventListener(type, listener, options);
+      }
+
+      close() {
+        try { emitSocket(this.__netlensId, 'sse', this.__netlensUrl, 'close'); } catch {}
+        return super.close();
+      }
+    }
+    window.EventSource = NetLensEventSource;
+  }
+
   // --------------------------------------------------------------- replay
   // The browser owns these header names and either rejects or silently drops
   // an attempt to set them, so a captured Cookie/Host/Origin cannot be sent

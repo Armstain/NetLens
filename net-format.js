@@ -26,7 +26,15 @@ function statusClass(d) {
 
 function isError(d) {
   if (d.kind === 'log') return d.level === 'error';
+  // An unclean close is a dropped connection, which is worth surfacing; a
+  // frame is just payload and is never an error by itself.
+  if (d.kind === 'ws') return d.event === 'error' || (d.event === 'close' && d.wasClean === false);
+  if (d.kind === 'wsframe') return false;
   return d.failed || d.status === 0 || d.status >= 400;
+}
+
+function isSocket(d) {
+  return d.kind === 'ws' || d.kind === 'wsframe';
 }
 
 function isLog(d) {
@@ -44,11 +52,15 @@ const SLOW_MS = 3000;
 const LARGE_BYTES = 1024 * 1024;
 
 function isSlow(d, thresholdMs = SLOW_MS) {
-  return !isLog(d) && typeof d.duration === 'number' && d.duration >= thresholdMs;
+  // A socket's duration is how long it stayed connected, which says nothing
+  // about latency — flagging a healthy long-lived socket as slow is noise.
+  if (isLog(d) || isSocket(d)) return false;
+  return typeof d.duration === 'number' && d.duration >= thresholdMs;
 }
 
 function isLarge(d, thresholdBytes = LARGE_BYTES) {
-  return !isLog(d) && typeof d.responseSize === 'number' && d.responseSize >= thresholdBytes;
+  if (isLog(d) || isSocket(d)) return false;
+  return typeof d.responseSize === 'number' && d.responseSize >= thresholdBytes;
 }
 
 // Buckets a capture list into the diagnostic categories. A single entry can
@@ -319,7 +331,7 @@ if (typeof module !== 'undefined') {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
     parseHeaderLines, formatHeaderLines,
     prettyJson, diffLines, collapseDiff,
-    isSlow, isLarge, diagnose, SLOW_MS, LARGE_BYTES,
+    isSlow, isLarge, diagnose, SLOW_MS, LARGE_BYTES, isSocket,
     dayLabel,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,

@@ -339,7 +339,9 @@
   function entryBytes(d) {
     const req = typeof d.requestBody === 'string' ? d.requestBody.length : 0;
     const res = typeof d.responseBody === 'string' ? d.responseBody.length : 0;
-    return req + res + 512;
+    // Socket frames carry their payload on .data, not a body field.
+    const frame = typeof d.data === 'string' ? d.data.length : 0;
+    return req + res + frame + 512;
   }
 
   function trimBuffer() {
