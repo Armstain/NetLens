@@ -19,7 +19,8 @@
   let currentTabId = null;
   let currentTabUrl = '';
   let entries = [];
-  const restoredIds = new Set();           
+  const restoredIds = new Set();
+  const socketRows = new Map();           
   let sessions = [];
   let paused = false;
   let pulseTimer = null;
@@ -140,6 +141,11 @@
 
   function startNewSession(url) {
     if (!url) url = currentTabUrl || 'Unknown URL';
+
+    // Socket ids are numbered per injected-script instance, so a reload starts
+    // again at ws1 and would otherwise find the previous page's row still
+    // registered — new frames would append to the old page's connection.
+    socketRows.clear();
 
     if (sessions.length > 0) {
       const current = sessions[sessions.length - 1];
@@ -1037,7 +1043,6 @@
   // keeps every frame as its own entry so it persists and restores like
   // anything else; only the DOM is capped.
   const MAX_SOCKET_FRAMES = 200;
-  const socketRows = new Map();
 
   function socketLabel(d) {
     return d.transport === 'sse' ? 'SSE' : 'WS';
@@ -1822,7 +1827,14 @@
     }
 
     while (entries.length > MAX_ROWS) {
-      const removed = entries.shift();
+      // A connection row is where every later frame gets appended, so evicting
+      // it on request churn orphans a live socket into a detached node and the
+      // frames silently stop appearing. Sockets are few and long-lived, so
+      // evict the oldest entry that isn't one.
+      let i = 0;
+      while (i < entries.length && entries[i].data && entries[i].data.kind === 'ws') i++;
+      if (i >= entries.length) break;
+      const [removed] = entries.splice(i, 1);
       removed.el.remove();
       for (const s of sessions) {
         const idx = s.entries.indexOf(removed);
