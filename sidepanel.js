@@ -29,6 +29,29 @@
   // stacking. Fullscreen isn't part of this group — it's a full overlay.
   const slidePanels = [];
 
+  // Toolbar buttons that are off by default: a Settings checkbox decides
+  // whether they even show. Turning one off also closes its panel, but never
+  // hides the checkbox itself — that would be the only way to turn it back on.
+  function wireToolbarToggle(btn, checkboxEl, storageKey, onHide) {
+    if (!btn) return;
+    const apply = (show) => {
+      btn.hidden = !show;
+      if (!show && onHide) onHide();
+    };
+    if (!checkboxEl) return;
+    checkboxEl.addEventListener('change', () => {
+      apply(checkboxEl.checked);
+      chrome.storage.local.set({ [storageKey]: checkboxEl.checked });
+    });
+    try {
+      chrome.storage.local.get([storageKey], (res) => {
+        const show = !!(res && res[storageKey]);
+        checkboxEl.checked = show;
+        apply(show);
+      });
+    } catch {}
+  }
+
   function buildSeparatorContent(el, url, timestamp, isCurrent = true) {
     el.textContent = '';
     
@@ -2331,17 +2354,6 @@
 
   function closeDiagPanel() { closeSlidePanel(diagPanel); }
 
-  const setShowDiagEl = document.getElementById('setShowDiag');
-
-  // Off by default — the toolbar was getting crowded, and most people never
-  // open this panel. The toggle lives in Settings, not here, so turning it
-  // off doesn't also hide the checkbox that turns it back on.
-  function applyDiagVisibility(show) {
-    if (!diagBtn) return;
-    diagBtn.hidden = !show;
-    if (!show) closeDiagPanel();
-  }
-
   if (diagBtn && diagPanel) {
     slidePanels.push({ el: diagPanel, close: closeDiagPanel });
     diagBtn.addEventListener('click', () => {
@@ -2354,19 +2366,7 @@
     });
   }
 
-  if (setShowDiagEl) {
-    setShowDiagEl.addEventListener('change', () => {
-      applyDiagVisibility(setShowDiagEl.checked);
-      chrome.storage.local.set({ netlensShowDiag: setShowDiagEl.checked });
-    });
-    try {
-      chrome.storage.local.get(['netlensShowDiag'], (res) => {
-        const show = !!(res && res.netlensShowDiag);
-        setShowDiagEl.checked = show;
-        applyDiagVisibility(show);
-      });
-    } catch {}
-  }
+  wireToolbarToggle(diagBtn, document.getElementById('setShowDiag'), 'netlensShowDiag', closeDiagPanel);
 
   // --------------------------------------------------------- saved sessions
   const historyBtn = document.getElementById('historyBtn');
@@ -2530,6 +2530,8 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !storagePanel.hidden) closeStoragePanel();
     });
+
+    wireToolbarToggle(storageBtn, document.getElementById('setShowStorage'), 'netlensShowStorage', closeStoragePanel);
   }
 
   // ------------------------------------------------------- element inspector
@@ -2871,7 +2873,7 @@
   }
 
   // ------------------------------------------------ custom decoder manager
-  const decodersBtn = document.getElementById('decodersBtn');
+  const decodersBtn = document.getElementById('openDecodersBtn');
   const decoderPanel = document.getElementById('decoderPanel');
   const decoderPanelClose = document.getElementById('decoderPanelClose');
   const decoderListEl = document.getElementById('decoderList');
