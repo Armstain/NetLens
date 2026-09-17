@@ -1260,3 +1260,65 @@ mark.hl {
 .history-del:hover { color: var(--red); }
 
 .session-container.restored .session-separator { border-left: 2px solid var(--indigo-deep); }
+
+/* -------------------------------------------------------------- diagnostics */
+.icon-btn { position: relative; }
+
+.icon-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--red);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.diag-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 7px 2px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+}
+
+.diag-row:first-of-type { border-top: none; }
+.diag-row:hover { background: var(--surface-2); }
+.diag-row:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+
+.diag-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diag-meta {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+@keyframes jump-flash {
+  0%, 100% { background: transparent; }
+  25% { background: rgba(129, 140, 248, 0.18); }
+}
+.jump-flash { animation: jump-flash 900ms ease; }

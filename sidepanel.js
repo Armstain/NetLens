@@ -1660,6 +1660,7 @@
 
     updateCount();
     pulse();
+    if (diagBtn) { if (!diagPanel.hidden) renderDiagnostics(); else diagCounts(); }
     if (pinned) {
       const lastEntry = currentSession.entries[currentSession.entries.length - 1];
       if (lastEntry) lastEntry.el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
@@ -1670,6 +1671,7 @@
     entries = [];
     sessions = [];
     restoredIds.clear();
+    if (diagBadge) diagBadge.hidden = true;
     listEl.textContent = '';
     updateCount();
     if (alsoBuffer && currentTabId != null) {
@@ -2009,6 +2011,108 @@
   if (fullscreenSearchEl) {
     fullscreenSearchEl.addEventListener('input', () => {
       highlightMatches(fullscreenBodyEl, fullscreenSearchEl.value.trim().toLowerCase(), false);
+    });
+  }
+
+  // ----------------------------------------------------------- diagnostics
+  const diagBtn = document.getElementById('diagBtn');
+  const diagBadge = document.getElementById('diagBadge');
+  const diagPanel = document.getElementById('diagPanel');
+  const diagPanelClose = document.getElementById('diagPanelClose');
+  const diagBody = document.getElementById('diagBody');
+
+  function jumpToEntry(d) {
+    const entry = entries.find((e) => e.data === d);
+    if (!entry) return;
+    entry.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (!entry.el.classList.contains('open')) {
+      const head = entry.el.querySelector('.row-head');
+      if (head) head.click();
+    }
+    entry.el.classList.add('jump-flash');
+    setTimeout(() => entry.el.classList.remove('jump-flash'), 900);
+  }
+
+  function diagFindingRow(d, extra) {
+    const row = document.createElement('button');
+    row.className = 'diag-row';
+    row.type = 'button';
+
+    const isLogEntry = isLog(d);
+    const tag = document.createElement('span');
+    tag.className = isLogEntry ? `method log-level-${d.level}` : `method m-${(d.method || '').toLowerCase()}`;
+    tag.textContent = isLogEntry ? (d.level === 'error' ? 'ERR' : 'WARN') : d.method;
+
+    const label = document.createElement('span');
+    label.className = 'diag-label';
+    label.textContent = isLogEntry ? (d.message || '').slice(0, 120) : pathOf(d.url);
+    label.title = isLogEntry ? (d.message || '') : d.url;
+
+    const meta = document.createElement('span');
+    meta.className = 'diag-meta';
+    meta.textContent = extra;
+
+    row.append(tag, label, meta);
+    row.addEventListener('click', () => { jumpToEntry(d); });
+    return row;
+  }
+
+  function diagSection(title, list, extraFn) {
+    if (!list.length) return null;
+    const details = document.createElement('details');
+    details.className = 'storage-section';
+    details.open = true;
+    const summary = document.createElement('summary');
+    summary.textContent = `${title} (${list.length})`;
+    details.appendChild(summary);
+    for (const d of list) details.appendChild(diagFindingRow(d, extraFn(d)));
+    return details;
+  }
+
+  // Split from the full render so a busy page updates the toolbar badge on
+  // every batch without rebuilding the panel's DOM while it is closed.
+  function diagCounts() {
+    const report = diagnose(entries.map((e) => e.data));
+    const total = report.failed.length + report.consoleErrors.length + report.slow.length + report.large.length;
+    if (diagBadge) {
+      diagBadge.hidden = total === 0;
+      diagBadge.textContent = total > 99 ? '99+' : String(total);
+    }
+    return report;
+  }
+
+  function renderDiagnostics() {
+    const report = diagCounts();
+    diagBody.textContent = '';
+
+    const sections = [
+      diagSection('Failed requests', report.failed, (d) => (d.failed || d.status === 0 ? 'ERR' : String(d.status))),
+      diagSection('Console errors', report.consoleErrors, () => ''),
+      diagSection('Slow requests (>3s)', report.slow, (d) => fmtDuration(d.duration)),
+      diagSection('Large responses (>1MB)', report.large, (d) => fmtSize(d.responseSize)),
+    ].filter(Boolean);
+
+    if (!sections.length) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = 'Nothing flagged — no failures, slow requests, large responses or console errors captured.';
+      diagBody.appendChild(note);
+    } else {
+      for (const s of sections) diagBody.appendChild(s);
+    }
+  }
+
+  function closeDiagPanel() { closeSlidePanel(diagPanel); }
+
+  if (diagBtn && diagPanel) {
+    slidePanels.push({ el: diagPanel, close: closeDiagPanel });
+    diagBtn.addEventListener('click', () => {
+      if (diagPanel.hidden) { renderDiagnostics(); openSlidePanel(diagPanel); }
+      else closeDiagPanel();
+    });
+    diagPanelClose.addEventListener('click', closeDiagPanel);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !diagPanel.hidden) closeDiagPanel();
     });
   }
 

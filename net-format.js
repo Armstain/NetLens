@@ -37,6 +37,36 @@ function isApi(d) {
   return /json|xml|graphql/i.test(d.contentType || '');
 }
 
+// Hard, measurable signals only — no guessing that request X caused error Y.
+// A slow or oversized response is a fact about that one entry; correlating it
+// with something else on the page is a different, much less reliable feature.
+const SLOW_MS = 3000;
+const LARGE_BYTES = 1024 * 1024;
+
+function isSlow(d, thresholdMs = SLOW_MS) {
+  return !isLog(d) && typeof d.duration === 'number' && d.duration >= thresholdMs;
+}
+
+function isLarge(d, thresholdBytes = LARGE_BYTES) {
+  return !isLog(d) && typeof d.responseSize === 'number' && d.responseSize >= thresholdBytes;
+}
+
+// Buckets a capture list into the diagnostic categories. A single entry can
+// land in more than one bucket (failed AND slow), each bucket is independent.
+function diagnose(list) {
+  const out = { failed: [], consoleErrors: [], slow: [], large: [] };
+  for (const d of list || []) {
+    if (isLog(d)) {
+      if (d.level === 'error') out.consoleErrors.push(d);
+      continue;
+    }
+    if (isError(d)) out.failed.push(d);
+    if (isSlow(d)) out.slow.push(d);
+    if (isLarge(d)) out.large.push(d);
+  }
+  return out;
+}
+
 function pathOf(url) {
   try {
     const u = new URL(url);
@@ -289,6 +319,7 @@ if (typeof module !== 'undefined') {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
     parseHeaderLines, formatHeaderLines,
     prettyJson, diffLines, collapseDiff,
+    isSlow, isLarge, diagnose, SLOW_MS, LARGE_BYTES,
     dayLabel,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,
