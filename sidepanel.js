@@ -1925,6 +1925,28 @@
     });
   }
 
+  // A same-tab reload never calls requestDump — only trackTab does, on tab
+  // switch — so the panel relies entirely on live 'netlens:batch' messages
+  // for a page it's already watching. Chrome's messaging channel can drop or
+  // race those in the first moments after document_start, and until now
+  // nothing ever re-synced: the only fix was closing and reopening the panel,
+  // which forces trackTab to run again. Pulling the content script's ring
+  // buffer and merging in whatever this session is missing, by id, closes
+  // that gap without the destructive clearAll a full requestDump would do —
+  // wiping mid-reload would also throw away the session bookkeeping
+  // startNewSession just set up.
+  function resyncCurrentSession(tabId) {
+    if (tabId !== currentTabId) return;
+    chrome.tabs.sendMessage(tabId, { type: 'netlens:dump' }, (res) => {
+      if (chrome.runtime.lastError || !res || !Array.isArray(res.buffer)) return;
+      const currentSession = sessions[sessions.length - 1];
+      if (!currentSession) return;
+      const known = new Set(currentSession.entries.map((e) => e.data && e.data.id));
+      const missing = res.buffer.filter((d) => !known.has(d.id));
+      if (missing.length) addEntries(missing);
+    });
+  }
+
   // -------------------------------------------------------- tab tracking
   function trackTab(tabId) {
     if (tabId == null || tabId === currentTabId) return;
@@ -1953,6 +1975,12 @@
     if (changeInfo.status === 'loading') {
       currentTabUrl = tab.url;
       startNewSession(tab.url);
+      // Early page captures are the ones most likely to race the messaging
+      // channel right after a fresh document_start; a slow page can still
+      // take seconds to reach 'complete', so don't wait for it to catch these.
+      setTimeout(() => resyncCurrentSession(tabId), 1500);
+    } else if (changeInfo.status === 'complete') {
+      resyncCurrentSession(tabId);
     }
   });
 
