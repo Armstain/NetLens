@@ -1,5 +1,18 @@
 # Changelog
 
+## 6.4
+
+- Added request replay: edit a captured request's method, URL, headers and body, then resend it from the page's own context so it carries real cookies and origin. Results include a Diff tab showing exactly what changed, using a line diff that trims the shared prefix/suffix first, so a multi-megabyte body with one changed field still diffs instantly instead of bailing out.
+- Added a saved sessions panel: captures now persist to IndexedDB as they arrive, so history survives closing the panel, navigating away, and closing the tab — previously it lived only in memory and was lost with the panel.
+- Added WebSocket and EventSource capture, both entirely invisible before now. Frames render nested under one row per connection with a live sent/received count, rate-limited to 60/sec so a chatty feed can't make the panel the performance problem it exists to find.
+- Added a Diagnostics panel (off by default, enable in Settings → Toolbar): failed requests, console errors, requests over 3s, and responses over 1MB — each a hard, measurable fact, with no guessing at what caused what. Click a finding to jump straight to its row.
+- The on-page toast now renders response bodies as a collapsible JSON tree instead of flat text, and repairs bodies truncated at the 200KB capture cap so a clipped response still renders structured. Added a "Locate in panel" button that scrolls to and opens the matching row in the side panel.
+- View storage is now opt-in like Diagnostics (Settings → Toolbar), and custom decoders moved from a toolbar icon into Settings — the toolbar was getting crowded.
+- Fixed the Diagnostics toggle silently doing nothing: an author `display` rule on `.icon-btn` was beating the browser's `[hidden]` stylesheet rule.
+- Fixed captures going missing after reloading the tab you're already watching. The panel only ever re-synced from the content script's buffer on tab switch, never on a same-tab reload, so a dropped message had nothing to fall back on until the panel itself was closed and reopened.
+- Fixed a live socket's frames silently going nowhere: its connection row could get evicted by ordinary request-count pruning on a busy page, or reused across a reload before its per-load frame counter reset.
+- Performance: capture no longer pays to clone full request/response bodies for a side panel that isn't open — sending backs off after a failed attempt and resumes the moment the panel is listening again. IndexedDB writes batch on a timer instead of opening a transaction on every 100ms flush.
+
 ## 6.3
 
 - Reworked the on-page toast into a full settings panel (gear icon): status-class and method chips, a slow-call threshold, URL substring/regex match, GraphQL mutations-only mode, dismiss timers, max stack size, corner position, dedupe toggle, response-body preview, presets, and a test-toast button to preview it without live traffic.
