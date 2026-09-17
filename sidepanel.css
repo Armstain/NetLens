@@ -1176,3 +1176,66 @@ mark.hl {
 }
 .font-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .font-meta { color: var(--muted); font-family: var(--mono); font-size: 10.5px; margin-top: 2px; }
+
+/* ------------------------------------------------------- saved sessions */
+.history-day {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 10px 0 4px;
+}
+
+.history-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.history-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 7px 9px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.history-main:hover { border-color: var(--indigo); }
+.history-main:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+
+.history-url {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+
+.history-errors { color: var(--red); }
+
+.history-del {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--faint);
+}
+
+.history-del:hover { color: var(--red); }
+
+.session-container.restored .session-separator { border-left: 2px solid var(--indigo-deep); }

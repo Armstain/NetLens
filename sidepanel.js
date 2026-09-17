@@ -18,7 +18,8 @@
 
   let currentTabId = null;
   let currentTabUrl = '';
-  let entries = [];           
+  let entries = [];
+  const restoredIds = new Set();           
   let sessions = [];
   let paused = false;
   let pulseTimer = null;
@@ -27,7 +28,6 @@
   // stacking. Fullscreen isn't part of this group — it's a full overlay.
   const slidePanels = [];
 
-  // ponytail: history is kept in sidepanel memory. If the sidepanel is closed, history is lost. Upgrade path: use chrome.storage.session or background service worker.
   function buildSeparatorContent(el, url, timestamp, isCurrent = true) {
     el.textContent = '';
     
@@ -149,6 +149,7 @@
         if (current.separatorEl) {
           buildSeparatorContent(current.separatorEl, url, current.timestamp, true);
         }
+        if (current.dbId != null) dbUpdateSession(current.dbId, url, current.timestamp).catch(() => {});
         addSessionDecodedIfAny(current.containerEl, url);
         return;
       }
@@ -183,9 +184,19 @@
       timestamp,
       entries: [],
       separatorEl,
-      containerEl
+      containerEl,
+      dbId: null,
+      // Entries can arrive before IndexedDB hands back the session id, so they
+      // queue here rather than being dropped.
+      pending: []
     };
     sessions.push(newSession);
+
+    dbStartSession(url, timestamp).then((id) => {
+      newSession.dbId = id;
+      if (newSession.pending.length) dbAddEntries(id, newSession.pending.splice(0)).catch(() => {});
+      return dbPrune();
+    }).catch(() => {});
 
     while (sessions.length > 2) {
       const oldSession = sessions.shift();
@@ -1632,6 +1643,9 @@
     }
     currentSession.containerEl.appendChild(frag);
 
+    if (currentSession.dbId != null) dbAddEntries(currentSession.dbId, batch).catch(() => {});
+    else if (currentSession.pending) currentSession.pending.push(...batch);
+
     while (entries.length > MAX_ROWS) {
       const removed = entries.shift();
       removed.el.remove();
@@ -1655,6 +1669,7 @@
   function clearAll(alsoBuffer) {
     entries = [];
     sessions = [];
+    restoredIds.clear();
     listEl.textContent = '';
     updateCount();
     if (alsoBuffer && currentTabId != null) {
@@ -1994,6 +2009,154 @@
   if (fullscreenSearchEl) {
     fullscreenSearchEl.addEventListener('input', () => {
       highlightMatches(fullscreenBodyEl, fullscreenSearchEl.value.trim().toLowerCase(), false);
+    });
+  }
+
+  // --------------------------------------------------------- saved sessions
+  const historyBtn = document.getElementById('historyBtn');
+  const historyPanel = document.getElementById('historyPanel');
+  const historyPanelClose = document.getElementById('historyPanelClose');
+  const historyClearBtn = document.getElementById('historyClearBtn');
+  const historyBody = document.getElementById('historyBody');
+
+  function historyNote(text) {
+    const el = document.createElement('div');
+    el.className = 'note';
+    el.textContent = text;
+    return el;
+  }
+
+  async function restoreSession(session) {
+    if (restoredIds.has(session.id)) return;
+    restoredIds.add(session.id);
+    const datas = await dbLoadEntries(session.id);
+    const container = document.createElement('div');
+    container.className = 'session-container restored';
+
+    const sep = document.createElement('div');
+    sep.className = 'session-separator';
+    buildSeparatorContent(sep, session.url, session.startedAt, false);
+    const label = sep.querySelector('.session-label');
+    if (label) label.textContent = 'Saved';
+    container.appendChild(sep);
+
+    const frag = document.createDocumentFragment();
+    for (const d of datas) {
+      const el = buildRow(d);
+      el.classList.add('archived');
+      // Restored rows join `entries` so the filter and search reach them, but
+      // not `sessions` — the live session must stay the one new captures
+      // append to.
+      entries.push({ data: d, el });
+      frag.appendChild(el);
+    }
+    container.appendChild(frag);
+    listEl.prepend(container);
+    updateCount();
+    applyFilter();
+  }
+
+  function renderHistory(list) {
+    historyBody.textContent = '';
+    if (!list.length) {
+      historyBody.appendChild(historyNote('Nothing saved yet — captures appear here as they arrive.'));
+      return;
+    }
+    let lastDay = null;
+    for (const s of list) {
+      const day = dayLabel(s.startedAt);
+      if (day !== lastDay) {
+        lastDay = day;
+        const head = document.createElement('div');
+        head.className = 'history-day';
+        head.textContent = day;
+        historyBody.appendChild(head);
+      }
+
+      const row = document.createElement('div');
+      row.className = 'history-row';
+
+      const main = document.createElement('button');
+      main.className = 'history-main';
+      main.type = 'button';
+      main.title = s.url || '';
+
+      const url = document.createElement('span');
+      url.className = 'history-url';
+      url.textContent = pathOf(s.url) || s.url || 'Unknown URL';
+
+      const meta = document.createElement('span');
+      meta.className = 'history-meta';
+      const time = new Date(s.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      meta.textContent = `${time} · ${s.count} req · ${fmtSize(s.bytes || 0)}`;
+      if (s.errors) {
+        const err = document.createElement('span');
+        err.className = 'history-errors';
+        err.textContent = ` · ${s.errors} err`;
+        meta.appendChild(err);
+      }
+
+      main.append(url, meta);
+      main.addEventListener('click', () => {
+        restoreSession(s).catch(() => {});
+        closeHistoryPanel();
+      });
+
+      const del = document.createElement('button');
+      del.className = 'icon-btn history-del';
+      del.type = 'button';
+      del.title = 'Delete this session';
+      del.setAttribute('aria-label', 'Delete this session');
+      del.textContent = '\u00d7';
+      del.addEventListener('click', () => {
+        dbDeleteSessions([s.id]).then(loadHistory).catch(() => {});
+      });
+
+      row.append(main, del);
+      historyBody.appendChild(row);
+    }
+  }
+
+  function loadHistory() {
+    return dbListSessions().then(renderHistory).catch(() => {
+      historyBody.textContent = '';
+      historyBody.appendChild(historyNote('Could not read saved sessions.'));
+    });
+  }
+
+  let historyClearArmed = false;
+  function disarmHistoryClear() {
+    historyClearArmed = false;
+    if (historyClearBtn) historyClearBtn.textContent = 'Clear all';
+  }
+
+  function closeHistoryPanel() {
+    closeSlidePanel(historyPanel);
+    disarmHistoryClear();
+  }
+
+  if (historyBtn && historyPanel) {
+    slidePanels.push({ el: historyPanel, close: closeHistoryPanel });
+
+    historyBtn.addEventListener('click', () => {
+      if (historyPanel.hidden) { openSlidePanel(historyPanel); loadHistory(); }
+      else closeHistoryPanel();
+    });
+    historyPanelClose.addEventListener('click', closeHistoryPanel);
+
+    // Deleting every saved capture is not undoable, so it takes two clicks.
+    historyClearBtn.addEventListener('click', () => {
+      if (!historyClearArmed) {
+        historyClearArmed = true;
+        historyClearBtn.textContent = 'Delete everything?';
+        return;
+      }
+      disarmHistoryClear();
+      dbClearAll().then(loadHistory).catch(() => {});
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !historyPanel.hidden) closeHistoryPanel();
     });
   }
 

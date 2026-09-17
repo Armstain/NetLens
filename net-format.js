@@ -270,11 +270,26 @@ function collapseDiff(rows, context = 3) {
   return out;
 }
 
+// Groups saved sessions by day. Compares against local midnight rather than a
+// rolling 24h window, so a session from 11pm last night reads as Yesterday at
+// 1am, not Today.
+function dayLabel(ts, now) {
+  const n = new Date(now == null ? Date.now() : now);
+  const midnight = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  const DAY = 86400000;
+  if (ts >= midnight) return 'Today';
+  if (ts >= midnight - DAY) return 'Yesterday';
+  const d = new Date(ts);
+  if (ts >= midnight - 6 * DAY) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
     parseHeaderLines, formatHeaderLines,
     prettyJson, diffLines, collapseDiff,
+    dayLabel,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,
   };
