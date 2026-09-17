@@ -36,7 +36,7 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["css-format.js", "net-format.js", "content.js"],
+      "js": ["css-format.js", "net-format.js", "decoders.js", "content.js"],
       "run_at": "document_start",
       "world": "ISOLATED"
     }

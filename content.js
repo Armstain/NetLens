@@ -95,6 +95,21 @@
       white-space: pre-wrap; overflow-wrap: anywhere;
     }
     .note { color: #8b949e; margin-top: 4px; font-size: 11px; }
+    .jtree {
+      max-height: 320px; overflow: auto; padding: 6px 8px;
+      background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+    }
+    .jtree details { margin-left: 14px; }
+    .jtree summary { cursor: pointer; list-style: none; }
+    .jtree summary::-webkit-details-marker { display: none; }
+    .jtree .leaf { margin-left: 14px; overflow-wrap: anywhere; }
+    .jtree .j-key { color: #79c0ff; }
+    .jtree .j-str { color: #a5d6ff; }
+    .jtree .j-num { color: #d2a8ff; }
+    .jtree .j-bool { color: #ffa657; }
+    .jtree .j-null { color: #8b949e; }
+    .jtree .j-hint { color: #8b949e; }
+    .jtree .j-more { color: #8b949e; margin-left: 14px; font-style: italic; }
     .btns { display: flex; gap: 6px; margin-top: 6px; }
     button {
       font: inherit; color: #e6edf3; background: #21262d;
@@ -164,22 +179,93 @@
     }, 200);
   }
 
+  // A truncated capture is cut off mid-object, so a plain JSON.parse fails
+  // and the toast fell back to raw, unindented text — tryParsePartialJson
+  // (decoders.js) closes off whatever braces/brackets are still open so the
+  // same tree renderer works on a clipped body as a whole one.
   function bodyPreview(d) {
     const raw = d.responseBody;
-    if (typeof raw !== 'string' || !raw) return { text: '(no body captured)', note: '' };
-    let text = raw;
-    try { text = JSON.stringify(JSON.parse(raw), null, 2); } catch {}
+    if (typeof raw !== 'string' || !raw) return { text: '(no body captured)', note: '', tree: null };
     const notes = [];
+    if (d.truncated) notes.push(`captured body truncated, ${fmtSize(d.responseSize)} total`);
+
+    let parsed = null;
+    try { parsed = JSON.parse(raw); } catch { parsed = tryParsePartialJson(raw); }
+    if (parsed !== null && typeof parsed === 'object') {
+      return { text: raw, note: notes.join(' · '), tree: parsed };
+    }
+
+    let text = raw;
     const lines = text.split('\n');
     if (lines.length > TOAST_BODY_LINES) {
       text = lines.slice(0, TOAST_BODY_LINES).join('\n');
       notes.push(`${lines.length - TOAST_BODY_LINES} more lines`);
     }
     if (text.length > TOAST_BODY_CHARS) text = text.slice(0, TOAST_BODY_CHARS);
-    // `truncated` means injected.js already cut the body at capture time, so the
-    // real response is bigger than anything we hold.
-    if (d.truncated) notes.push(`captured body truncated, ${fmtSize(d.responseSize)} total`);
-    return { text, note: notes.join(' · ') };
+    return { text, note: notes.join(' · '), tree: null };
+  }
+
+  // A much smaller cousin of the side panel's jsonNode: capped depth and
+  // sibling count, because this renders inside a fixed-position toast that
+  // has to stay light regardless of how big the real response is — the full
+  // structure is one Locate click away in the panel.
+  const TOAST_TREE_DEPTH = 4;
+  const TOAST_TREE_ITEMS = 40;
+
+  function toastJsonNode(key, value, depth) {
+    const isObj = value !== null && typeof value === 'object';
+    if (isObj) {
+      const isArr = Array.isArray(value);
+      const keys = isArr ? value : Object.keys(value);
+      if (depth >= TOAST_TREE_DEPTH) {
+        const leaf = document.createElement('div');
+        leaf.className = 'leaf j-more';
+        leaf.textContent = isArr ? `Array(${value.length})` : `Object {${keys.length}}`;
+        return leaf;
+      }
+      const det = document.createElement('details');
+      if (depth === 0) det.open = true;
+      const sum = document.createElement('summary');
+      if (key !== null) {
+        const k = document.createElement('span');
+        k.className = 'j-key';
+        k.textContent = JSON.stringify(key) + ': ';
+        sum.appendChild(k);
+      }
+      const hint = document.createElement('span');
+      hint.className = 'j-hint';
+      hint.textContent = isArr ? `Array(${value.length})` : `Object {${keys.length}}`;
+      sum.appendChild(hint);
+      det.appendChild(sum);
+
+      const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
+      for (const [k, v] of children.slice(0, TOAST_TREE_ITEMS)) {
+        det.appendChild(toastJsonNode(String(k), v, depth + 1));
+      }
+      if (children.length > TOAST_TREE_ITEMS) {
+        const more = document.createElement('div');
+        more.className = 'j-more';
+        more.textContent = `… ${children.length - TOAST_TREE_ITEMS} more — open in panel`;
+        det.appendChild(more);
+      }
+      return det;
+    }
+
+    const div = document.createElement('div');
+    div.className = 'leaf';
+    if (key !== null) {
+      const k = document.createElement('span');
+      k.className = 'j-key';
+      k.textContent = JSON.stringify(key) + ': ';
+      div.appendChild(k);
+    }
+    const v = document.createElement('span');
+    if (typeof value === 'string') { v.className = 'j-str'; v.textContent = JSON.stringify(value); }
+    else if (typeof value === 'number') { v.className = 'j-num'; v.textContent = String(value); }
+    else if (typeof value === 'boolean') { v.className = 'j-bool'; v.textContent = String(value); }
+    else { v.className = 'j-null'; v.textContent = 'null'; }
+    div.appendChild(v);
+    return div;
   }
 
   // One line, whitespace flattened — the card is where the real body lives.
@@ -199,10 +285,17 @@
     url.textContent = d.url;
     card.appendChild(url);
 
-    const { text, note } = bodyPreview(d);
-    const pre = document.createElement('pre');
-    pre.textContent = text;
-    card.appendChild(pre);
+    const { text, note, tree } = bodyPreview(d);
+    if (tree !== null) {
+      const treeEl = document.createElement('div');
+      treeEl.className = 'jtree';
+      treeEl.appendChild(toastJsonNode(null, tree, 0));
+      card.appendChild(treeEl);
+    } else {
+      const pre = document.createElement('pre');
+      pre.textContent = text;
+      card.appendChild(pre);
+    }
 
     if (note) {
       const noteEl = document.createElement('div');
@@ -228,6 +321,32 @@
       setTimeout(() => { copyBtn.textContent = 'Copy body'; }, 1500);
     });
     btns.appendChild(copyBtn);
+
+    const locateBtn = document.createElement('button');
+    locateBtn.type = 'button';
+    locateBtn.textContent = 'Locate in panel';
+    locateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const original = locateBtn.textContent;
+      const request = (attemptsLeft) => {
+        try {
+          chrome.runtime.sendMessage({ type: 'netlens:locate', id: d.id }, () => {
+            // No receiver means the panel isn't open yet — open it and retry
+            // a few times while it loads, rather than giving up on one miss
+            // or retrying forever if it never opens.
+            if (chrome.runtime.lastError && attemptsLeft > 0) {
+              try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+              setTimeout(() => request(attemptsLeft - 1), 500);
+            }
+          });
+        } catch {}
+      };
+      request(3);
+      locateBtn.textContent = 'Locating…';
+      setTimeout(() => { locateBtn.textContent = original; }, 1200);
+    });
+    btns.appendChild(locateBtn);
+
     card.appendChild(btns);
     return card;
   }
