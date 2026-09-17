@@ -911,19 +911,25 @@
     container.appendChild(table);
   }
 
+  // `text` can be a function instead of a string, for a caller whose value
+  // has to be computed at click time rather than when the button is built —
+  // the replay panel's cURL export, where the fields can change after the
+  // button exists.
   function addCopyButton(container, text, label = 'Copy') {
     const btn = document.createElement('button');
     btn.className = 'copy-btn';
     btn.textContent = label;
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      navigator.clipboard.writeText(text).then(() => {
+      const value = typeof text === 'function' ? text() : text;
+      navigator.clipboard.writeText(value).then(() => {
         btn.textContent = 'Copied';
         btn.classList.add('copied');
         setTimeout(() => { btn.textContent = label; btn.classList.remove('copied'); }, 1200);
       });
     });
     container.appendChild(btn);
+    return btn;
   }
 
   // ------------------------------------------------------- replay snippets
@@ -1623,23 +1629,16 @@
     resetBtn.textContent = 'Reset';
     resetBtn.addEventListener('click', reset);
 
-    const curlBtn = document.createElement('button');
-    curlBtn.className = 'copy-btn';
-    curlBtn.type = 'button';
-    curlBtn.textContent = 'Copy cURL';
-    curlBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(buildCurl(currentRequest())).then(() => {
-        curlBtn.textContent = 'Copied';
-        curlBtn.classList.add('copied');
-        setTimeout(() => { curlBtn.textContent = 'Copy cURL'; curlBtn.classList.remove('copied'); }, 1200);
-      });
-    });
-
     const hint = document.createElement('span');
     hint.className = 'replay-hint';
     hint.textContent = '⌘/Ctrl+Enter';
 
-    actions.append(sendBtn, fmtBtn, resetBtn, curlBtn, hint);
+    actions.append(sendBtn, fmtBtn, resetBtn);
+    // The fields can change after this button exists, so the cURL text has to
+    // be computed at click time — addCopyButton's `text` accepts a function
+    // for exactly this.
+    addCopyButton(actions, () => buildCurl(currentRequest()), 'Copy cURL');
+    actions.appendChild(hint);
 
     bodyEl.addEventListener('input', validate);
     wrap.addEventListener('keydown', (e) => {
