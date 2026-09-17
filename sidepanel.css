@@ -337,7 +337,7 @@ body { display: flex; flex-direction: column; }
 
 .replay-line { display: flex; gap: 6px; }
 
-.replay-line input {
+.replay-line input, .replay-line select {
   font-family: var(--mono);
   font-size: 11px;
   background: var(--bg);
@@ -349,12 +349,13 @@ body { display: flex; flex-direction: column; }
 }
 
 .replay-line input:focus-visible,
+.replay-line select:focus-visible,
 .replay-field:focus-visible {
   outline: none;
   border-color: var(--indigo);
 }
 
-.replay-method { width: 78px; flex: none; text-transform: uppercase; }
+.replay-method { width: 88px; flex: none; cursor: pointer; }
 .replay-url { flex: 1 1 auto; }
 
 .replay-tabs { margin-bottom: -4px; }

@@ -1297,10 +1297,21 @@
 
     const line = document.createElement('div');
     line.className = 'replay-line';
-    const methodEl = document.createElement('input');
+    // A picker, not a text field: switching GET to POST is a real thing to
+    // want, typing a method by hand only ever produces typos that fetch will
+    // dutifully put on the wire.
+    const methodEl = document.createElement('select');
     methodEl.className = 'replay-method';
-    methodEl.spellcheck = false;
     methodEl.setAttribute('aria-label', 'Method');
+    const captured = String(d.method || 'GET').toUpperCase();
+    const methodOptions = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+    if (!methodOptions.includes(captured)) methodOptions.unshift(captured);
+    for (const m of methodOptions) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      methodEl.appendChild(opt);
+    }
     const urlEl = document.createElement('input');
     urlEl.className = 'replay-url';
     urlEl.spellcheck = false;
@@ -1342,7 +1353,7 @@
     };
 
     const reset = () => {
-      methodEl.value = d.method || 'GET';
+      methodEl.value = captured;
       urlEl.value = d.url || '';
       headersEl.value = formatHeaderLines(d.requestHeaders);
       bodyEl.value = prettyJson(originalBody) || originalBody;
@@ -1368,7 +1379,7 @@
     }
 
     const currentRequest = () => ({
-      method: methodEl.value.trim() || 'GET',
+      method: methodEl.value || 'GET',
       url: urlEl.value.trim(),
       requestHeaders: parseHeaderLines(headersEl.value),
       requestBody: bodyEl.value,
