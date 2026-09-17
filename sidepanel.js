@@ -1162,26 +1162,115 @@
   }
 
   // --------------------------------------------------------------- replay
-  function renderReplayResult(container, res, d) {
-    container.textContent = '';
-    if (!res || !res.ok) {
-      const err = document.createElement('div');
-      err.className = 'replay-error';
-      err.textContent = (res && res.error) || 'Replay failed';
-      container.appendChild(err);
+  const REPLAY_UNREACHABLE = 'Could not reach the page — reload the tab and try again.';
+
+  function replayNote(text, cls) {
+    const el = document.createElement('div');
+    el.className = cls || 'replay-note';
+    el.textContent = text;
+    return el;
+  }
+
+  function statusPill(status, failed) {
+    const wrap = document.createElement('span');
+    wrap.className = statusClass({ status, failed });
+    const pill = document.createElement('span');
+    pill.className = 'status';
+    pill.textContent = failed || status === 0 ? 'ERR' : String(status);
+    wrap.appendChild(pill);
+    return wrap;
+  }
+
+  function renderDiff(container, beforeText, afterText) {
+    // Diff the pretty-printed form so a single changed field shows as one
+    // changed line rather than one enormous one.
+    const before = prettyJson(beforeText) || (beforeText == null ? '' : String(beforeText));
+    const after = prettyJson(afterText) || (afterText == null ? '' : String(afterText));
+    if (before === after) {
+      container.appendChild(replayNote('Identical to the original response.', 'note'));
       return;
     }
-    const line = document.createElement('div');
-    line.className = 'replay-compare';
-    const was = d.failed || d.status === 0 ? 'ERR' : d.status;
-    const now = res.status === 0 ? 'ERR' : res.status;
-    line.textContent = `${was} \u2192 ${now}  \u00b7  ${fmtDuration(d.duration)} \u2192 ${fmtDuration(res.duration)}  \u00b7  ${fmtSize(d.responseSize || 0)} \u2192 ${fmtSize(res.responseSize || 0)}`;
-    if (String(was) !== String(now)) line.classList.add('replay-changed');
-    container.appendChild(line);
+    const rows = diffLines(before, after);
+    if (!rows) {
+      container.appendChild(replayNote('Too large to diff.', 'note'));
+      return;
+    }
+    const pre = document.createElement('pre');
+    pre.className = 'raw diff';
+    for (const r of collapseDiff(rows)) {
+      const span = document.createElement('span');
+      if (r.type === '@') {
+        span.className = 'diff-skip';
+        span.textContent = `⋯ ${r.text}\n`;
+      } else {
+        span.className = r.type === '+' ? 'diff-add' : r.type === '-' ? 'diff-del' : 'diff-same';
+        span.textContent = `${r.type} ${r.text}\n`;
+      }
+      pre.appendChild(span);
+    }
+    container.appendChild(pre);
+  }
 
-    const bodyBox = document.createElement('div');
-    container.appendChild(bodyBox);
-    renderBody(bodyBox, res.responseBody, res.truncated);
+  function renderReplayResult(container, res, d, sentHeaders) {
+    container.textContent = '';
+    if (!res || !res.ok) {
+      container.appendChild(replayNote(`⚠ ${(res && res.error) || 'Replay failed'}`, 'replay-error'));
+      return;
+    }
+
+    const mk = (cls, text) => {
+      const s = document.createElement('span');
+      s.className = cls;
+      s.textContent = text;
+      return s;
+    };
+
+    const compare = document.createElement('div');
+    compare.className = 'replay-compare';
+    compare.append(
+      statusPill(d.status, d.failed),
+      mk('replay-arrow', '→'),
+      statusPill(res.status, false),
+      mk('replay-sep', '·'),
+      mk('replay-metric', `${fmtDuration(d.duration)} → ${fmtDuration(res.duration)}`),
+      mk('replay-sep', '·'),
+      mk('replay-metric', `${fmtSize(d.responseSize || 0)} → ${fmtSize(res.responseSize || 0)}`)
+    );
+    container.appendChild(compare);
+
+    // The executor reports the headers it actually sent, so anything missing
+    // was stripped as browser-owned. Saying which beats leaving the user to
+    // wonder why their Cookie header had no effect.
+    const dropped = Object.keys(sentHeaders || {}).filter((k) => !(k in (res.requestHeaders || {})));
+    if (dropped.length) {
+      container.appendChild(replayNote(`⚠ Browser-owned headers dropped: ${dropped.join(', ')}`));
+    }
+
+    const tabs = document.createElement('div');
+    tabs.className = 'tabs';
+    const out = document.createElement('div');
+    out.className = 'tab-body';
+    const views = {
+      Diff: () => { out.textContent = ''; renderDiff(out, d.responseBody, res.responseBody); },
+      Response: () => renderBody(out, res.responseBody, res.truncated),
+      Headers: () => renderHeaders(out, res),
+    };
+    let active = null;
+    for (const name of Object.keys(views)) {
+      const btn = document.createElement('button');
+      btn.className = 'tab';
+      btn.type = 'button';
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        if (active) active.classList.remove('active');
+        active = btn;
+        btn.classList.add('active');
+        views[name]();
+      });
+      tabs.appendChild(btn);
+    }
+    container.append(tabs, out);
+    tabs.firstChild.click();
   }
 
   function buildReplay(container, d) {
@@ -1191,94 +1280,180 @@
     sum.textContent = 'Replay';
     wrap.appendChild(sum);
 
+    const inner = document.createElement('div');
+    inner.className = 'replay-inner';
+    wrap.appendChild(inner);
+
     const line = document.createElement('div');
     line.className = 'replay-line';
     const methodEl = document.createElement('input');
     methodEl.className = 'replay-method';
-    methodEl.value = d.method || 'GET';
     methodEl.spellcheck = false;
+    methodEl.setAttribute('aria-label', 'Method');
     const urlEl = document.createElement('input');
     urlEl.className = 'replay-url';
-    urlEl.value = d.url || '';
     urlEl.spellcheck = false;
+    urlEl.setAttribute('aria-label', 'URL');
     line.append(methodEl, urlEl);
 
     const headersEl = document.createElement('textarea');
     headersEl.className = 'replay-field';
-    headersEl.rows = 4;
+    headersEl.rows = 5;
     headersEl.spellcheck = false;
-    headersEl.value = formatHeaderLines(d.requestHeaders);
     headersEl.setAttribute('aria-label', 'Request headers');
 
     const bodyEl = document.createElement('textarea');
     bodyEl.className = 'replay-field';
-    bodyEl.rows = 5;
+    bodyEl.rows = 9;
     bodyEl.spellcheck = false;
-    bodyEl.value = usableBody(d.requestBody) || '';
     bodyEl.setAttribute('aria-label', 'Request body');
 
-    wrap.append(line, label('Headers'), headersEl, label('Body'), bodyEl);
-
-    // Replaying a body we never fully captured would send the API something
-    // that is not what the page sent, so say so rather than quietly differing.
-    if (d.requestBody && !usableBody(d.requestBody)) {
-      wrap.appendChild(note(`Original body was ${d.requestBody} — not replayable, type a replacement.`));
-    }
-    if (d.requestBodyTruncated) {
-      wrap.appendChild(note('Captured body hit the 200KB cap and is clipped — sending it will not match the original.'));
-    }
-
-    const actions = document.createElement('div');
-    actions.className = 'replay-actions';
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'copy-btn replay-send';
-    sendBtn.type = 'button';
-    sendBtn.textContent = 'Send';
-    actions.appendChild(sendBtn);
+    const warn = document.createElement('div');
+    warn.className = 'replay-warn';
+    warn.hidden = true;
 
     const out = document.createElement('div');
     out.className = 'replay-result';
-    wrap.append(actions, out);
 
-    sendBtn.addEventListener('click', () => {
-      if (currentTabId == null) return;
-      sendBtn.disabled = true;
-      sendBtn.textContent = 'Sending\u2026';
-      out.textContent = '';
-      const req = {
-        method: methodEl.value.trim() || 'GET',
-        url: urlEl.value.trim(),
-        headers: parseHeaderLines(headersEl.value),
+    const originalBody = usableBody(d.requestBody) || '';
+
+    const validate = () => {
+      const t = bodyEl.value.trim();
+      // Only JSON-looking bodies are checked; form-encoded and plain text are
+      // valid as typed and must not be flagged.
+      const looksJson = t && (t[0] === '{' || t[0] === '[');
+      let bad = false;
+      if (looksJson && t.length < 200000) {
+        try { JSON.parse(t); } catch { bad = true; }
+      }
+      warn.hidden = !bad;
+      warn.textContent = bad ? '⚠ Not valid JSON — it will be sent exactly as typed.' : '';
+    };
+
+    const reset = () => {
+      methodEl.value = d.method || 'GET';
+      urlEl.value = d.url || '';
+      headersEl.value = formatHeaderLines(d.requestHeaders);
+      bodyEl.value = prettyJson(originalBody) || originalBody;
+      validate();
+    };
+
+    const tabs = document.createElement('div');
+    tabs.className = 'tabs replay-tabs';
+    const panes = { Headers: headersEl, Body: bodyEl };
+    let activeTab = null;
+    for (const name of Object.keys(panes)) {
+      const btn = document.createElement('button');
+      btn.className = 'tab';
+      btn.type = 'button';
+      btn.textContent = name;
+      btn.addEventListener('click', () => {
+        if (activeTab) activeTab.classList.remove('active');
+        activeTab = btn;
+        btn.classList.add('active');
+        for (const k of Object.keys(panes)) panes[k].hidden = k !== name;
+      });
+      tabs.appendChild(btn);
+    }
+
+    const currentRequest = () => ({
+      method: methodEl.value.trim() || 'GET',
+      url: urlEl.value.trim(),
+      requestHeaders: parseHeaderLines(headersEl.value),
+      requestBody: bodyEl.value,
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'replay-actions';
+
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'replay-send';
+    sendBtn.type = 'button';
+    sendBtn.textContent = 'Send';
+
+    const send = () => {
+      if (currentTabId == null || sendBtn.disabled) return;
+      const req = currentRequest();
+      const payload = {
+        method: req.method,
+        url: req.url,
+        headers: req.requestHeaders,
         body: bodyEl.value,
         credentials: d.credentials || undefined,
         mode: d.mode || undefined,
         redirect: d.redirect || undefined,
       };
-      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:replay', req }, (res) => {
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending…';
+      out.textContent = '';
+      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:replay', req: payload }, (res) => {
         sendBtn.disabled = false;
         sendBtn.textContent = 'Send';
         if (chrome.runtime.lastError || !res) {
-          renderReplayResult(out, { ok: false, error: 'Could not reach the page — reload the tab and try again.' }, d);
+          renderReplayResult(out, { ok: false, error: REPLAY_UNREACHABLE }, d, payload.headers);
           return;
         }
-        renderReplayResult(out, res, d);
+        renderReplayResult(out, res, d, payload.headers);
+      });
+    };
+    sendBtn.addEventListener('click', send);
+
+    const fmtBtn = document.createElement('button');
+    fmtBtn.className = 'copy-btn';
+    fmtBtn.type = 'button';
+    fmtBtn.textContent = 'Format';
+    fmtBtn.addEventListener('click', () => {
+      const pretty = prettyJson(bodyEl.value);
+      if (pretty) bodyEl.value = pretty;
+      validate();
+    });
+
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'copy-btn';
+    resetBtn.type = 'button';
+    resetBtn.textContent = 'Reset';
+    resetBtn.addEventListener('click', reset);
+
+    const curlBtn = document.createElement('button');
+    curlBtn.className = 'copy-btn';
+    curlBtn.type = 'button';
+    curlBtn.textContent = 'Copy cURL';
+    curlBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(buildCurl(currentRequest())).then(() => {
+        curlBtn.textContent = 'Copied';
+        curlBtn.classList.add('copied');
+        setTimeout(() => { curlBtn.textContent = 'Copy cURL'; curlBtn.classList.remove('copied'); }, 1200);
       });
     });
 
+    const hint = document.createElement('span');
+    hint.className = 'replay-hint';
+    hint.textContent = '⌘/Ctrl+Enter';
+
+    actions.append(sendBtn, fmtBtn, resetBtn, curlBtn, hint);
+
+    bodyEl.addEventListener('input', validate);
+    wrap.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    inner.append(line, tabs, headersEl, bodyEl, warn);
+    // A body we never fully captured must not be resent as if it were the
+    // real one, so say what is missing instead of silently differing.
+    if (d.requestBody && !originalBody) {
+      inner.appendChild(replayNote(`⚠ Original body was ${d.requestBody} — not replayable, type a replacement.`));
+    }
+    if (d.requestBodyTruncated) {
+      inner.appendChild(replayNote('⚠ Captured body hit the 200KB cap and is clipped — sending it will not match the original.'));
+    }
+    inner.append(actions, out);
     container.appendChild(wrap);
 
-    function label(text) {
-      const el = document.createElement('div');
-      el.className = 'replay-label';
-      el.textContent = text;
-      return el;
-    }
-    function note(text) {
-      const el = document.createElement('div');
-      el.className = 'replay-note';
-      el.textContent = `\u26a0 ${text}`;
-      return el;
-    }
+    reset();
+    (bodyEl.value ? tabs.children[1] : tabs.children[0]).click();
   }
 
   // -------------------------------------------------------- text highlighting

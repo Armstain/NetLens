@@ -198,10 +198,83 @@ function formatHeaderLines(headers) {
   return Object.keys(headers || {}).map((k) => `${k}: ${headers[k]}`).join('\n');
 }
 
+// Pretty-prints a JSON body so it can be edited and diffed line by line.
+// Returns null for anything that is not JSON, so callers can fall back to the
+// raw text rather than mangling form-encoded or plain-text bodies.
+function prettyJson(text) {
+  if (typeof text !== 'string') return null;
+  const t = text.trim();
+  if (!t || (t[0] !== '{' && t[0] !== '[')) return null;
+  try {
+    return JSON.stringify(JSON.parse(t), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+const DIFF_MAX_LINES = 1200;
+
+// Longest-common-subsequence line diff. Returns null above the cap instead of
+// locking the panel up.
+// ponytail: O(n*m) table, ~5.7MB at the cap. Swap in Myers if the cap ever
+// needs lifting.
+function diffLines(before, after) {
+  const a = String(before == null ? '' : before).split('\n');
+  const b = String(after == null ? '' : after).split('\n');
+  if (a.length > DIFF_MAX_LINES || b.length > DIFF_MAX_LINES) return null;
+
+  const n = a.length;
+  const m = b.length;
+  const dp = [];
+  for (let i = 0; i <= n; i++) dp.push(new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push({ type: ' ', text: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: '-', text: a[i] }); i++; }
+    else { out.push({ type: '+', text: b[j] }); j++; }
+  }
+  while (i < n) { out.push({ type: '-', text: a[i] }); i++; }
+  while (j < m) { out.push({ type: '+', text: b[j] }); j++; }
+  return out;
+}
+
+// Long runs of identical lines are noise — a 600-line response with three
+// changed fields should not render 597 unchanged ones. Collapsed runs become a
+// single '@' row carrying the count.
+function collapseDiff(rows, context = 3) {
+  if (!Array.isArray(rows)) return [];
+  const keep = new Array(rows.length).fill(false);
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].type === ' ') continue;
+    for (let j = Math.max(0, i - context); j <= Math.min(rows.length - 1, i + context); j++) keep[j] = true;
+  }
+  const out = [];
+  let run = 0;
+  for (let i = 0; i < rows.length; i++) {
+    if (keep[i]) {
+      if (run > 0) { out.push({ type: '@', text: `${run} unchanged line${run === 1 ? '' : 's'}`, count: run }); run = 0; }
+      out.push(rows[i]);
+    } else {
+      run++;
+    }
+  }
+  if (run > 0) out.push({ type: '@', text: `${run} unchanged line${run === 1 ? '' : 's'}`, count: run });
+  return out;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
     parseHeaderLines, formatHeaderLines,
+    prettyJson, diffLines, collapseDiff,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,
   };
