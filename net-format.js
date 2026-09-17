@@ -177,9 +177,31 @@ function toastMatch(d, settings) {
   return false;
 }
 
+// Headers are edited as text, so they have to survive a round trip through it.
+// Split on the FIRST colon only: values routinely contain colons (URLs, IPv6,
+// timestamps) and splitting on all of them silently corrupts the header.
+function parseHeaderLines(text) {
+  const out = {};
+  const raw = text == null ? '' : String(text);
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf(':');
+    if (i <= 0) continue;
+    const k = t.slice(0, i).trim();
+    if (k) out[k] = t.slice(i + 1).trim();
+  }
+  return out;
+}
+
+function formatHeaderLines(headers) {
+  return Object.keys(headers || {}).map((k) => `${k}: ${headers[k]}`).join('\n');
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
+    parseHeaderLines, formatHeaderLines,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,
   };
