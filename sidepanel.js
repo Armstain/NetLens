@@ -2104,6 +2104,17 @@
 
   function closeDiagPanel() { closeSlidePanel(diagPanel); }
 
+  const setShowDiagEl = document.getElementById('setShowDiag');
+
+  // Off by default — the toolbar was getting crowded, and most people never
+  // open this panel. The toggle lives in Settings, not here, so turning it
+  // off doesn't also hide the checkbox that turns it back on.
+  function applyDiagVisibility(show) {
+    if (!diagBtn) return;
+    diagBtn.hidden = !show;
+    if (!show) closeDiagPanel();
+  }
+
   if (diagBtn && diagPanel) {
     slidePanels.push({ el: diagPanel, close: closeDiagPanel });
     diagBtn.addEventListener('click', () => {
@@ -2114,6 +2125,20 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !diagPanel.hidden) closeDiagPanel();
     });
+  }
+
+  if (setShowDiagEl) {
+    setShowDiagEl.addEventListener('change', () => {
+      applyDiagVisibility(setShowDiagEl.checked);
+      chrome.storage.local.set({ netlensShowDiag: setShowDiagEl.checked });
+    });
+    try {
+      chrome.storage.local.get(['netlensShowDiag'], (res) => {
+        const show = !!(res && res.netlensShowDiag);
+        setShowDiagEl.checked = show;
+        applyDiagVisibility(show);
+      });
+    } catch {}
   }
 
   // --------------------------------------------------------- saved sessions
