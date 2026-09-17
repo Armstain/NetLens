@@ -4,6 +4,19 @@
   window.__netlens_content_installed = true;
 
   const RING_SIZE = 200;
+  // The ring holds full bodies, so 200 entries of capped 200KB responses would
+  // pin 40MB in the page's process. Whichever limit bites first wins.
+  const RING_BYTES = 8 * 1024 * 1024;
+
+  // With the side panel closed there is no receiver, but sendMessage still
+  // structured-clones the whole batch — bodies included — before it finds that
+  // out. On a busy page that is megabytes of pointless serialisation every
+  // flush, so stop sending once it fails and retry on a timer. Nothing is lost
+  // by backing off: the panel pulls this ring buffer with netlens:dump the
+  // moment it opens.
+  const PANEL_RETRY_MS = 2000;
+  let panelLikely = true;
+  let panelRetryAt = 0;
   let buffer = [];
 
   // ----------------------------------------------------------- api toast
@@ -323,28 +336,61 @@
     if (e.key === 'Escape' && liveToasts.size) clearToasts();
   }, true);
 
+  function entryBytes(d) {
+    const req = typeof d.requestBody === 'string' ? d.requestBody.length : 0;
+    const res = typeof d.responseBody === 'string' ? d.responseBody.length : 0;
+    return req + res + 512;
+  }
+
+  function trimBuffer() {
+    if (buffer.length > RING_SIZE) buffer = buffer.slice(-RING_SIZE);
+    let total = 0;
+    for (const d of buffer) total += entryBytes(d);
+    let cut = 0;
+    while (cut < buffer.length - 1 && total > RING_BYTES) {
+      total -= entryBytes(buffer[cut]);
+      cut++;
+    }
+    if (cut) buffer = buffer.slice(cut);
+  }
+
+  function sendBatchToPanel(batch) {
+    if (!panelLikely && Date.now() < panelRetryAt) return;
+    const backOff = () => {
+      panelLikely = false;
+      panelRetryAt = Date.now() + PANEL_RETRY_MS;
+    };
+    try {
+      chrome.runtime.sendMessage({ type: 'netlens:batch', batch }, () => {
+        if (chrome.runtime.lastError) backOff();
+        else panelLikely = true;
+      });
+    } catch {
+      backOff();
+    }
+  }
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     const data = event.data;
     if (!data || data.__netlens !== true || !Array.isArray(data.batch)) return;
 
     buffer.push(...data.batch);
-    if (buffer.length > RING_SIZE) buffer = buffer.slice(-RING_SIZE);
+    trimBuffer();
 
     for (const entry of data.batch) {
       if (toastMatch(entry, toastSettings)) showToast(entry);
     }
 
-    try {
-      chrome.runtime.sendMessage({ type: 'netlens:batch', batch: data.batch }, () => {
-        // Swallow "no receiving end" when the panel is closed.
-        void chrome.runtime.lastError;
-      });
-    } catch {}
+    sendBatchToPanel(data.batch);
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg) return;
+    // Any message from the panel proves it is listening, so resume sending
+    // immediately rather than waiting out the backoff.
+    panelLikely = true;
+    panelRetryAt = 0;
     if (msg.type === 'netlens:dump') {
       sendResponse({ buffer });
       return;

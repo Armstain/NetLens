@@ -5,6 +5,11 @@
 
   const MAX_BODY = 200 * 1024; // 200KB cap per body
   const FLUSH_MS = 100;
+  // A page can fire thousands of requests inside one flush window. Sending
+  // them as a single postMessage means structured-cloning every body at once,
+  // and `push(...batch)` on the receiving side would also risk blowing the
+  // argument limit. Flushing early bounds both without dropping captures.
+  const MAX_BATCH = 400;
 
   let queue = [];
   let flushTimer = null;
@@ -40,6 +45,11 @@
 
   function enqueue(entry) {
     queue.push(entry);
+    if (queue.length >= MAX_BATCH) {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flush();
+      return;
+    }
     if (!flushTimer) flushTimer = setTimeout(flush, FLUSH_MS);
   }
 

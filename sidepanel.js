@@ -1643,8 +1643,10 @@
     }
     currentSession.containerEl.appendChild(frag);
 
-    if (currentSession.dbId != null) dbAddEntries(currentSession.dbId, batch).catch(() => {});
-    else if (currentSession.pending) currentSession.pending.push(...batch);
+    if (currentSession.pending) {
+      currentSession.pending.push(...batch);
+      scheduleDbFlush();
+    }
 
     while (entries.length > MAX_ROWS) {
       const removed = entries.shift();
@@ -1660,12 +1662,37 @@
 
     updateCount();
     pulse();
-    if (diagBtn) { if (!diagPanel.hidden) renderDiagnostics(); else diagCounts(); }
+    scheduleDiagUpdate();
     if (pinned) {
       const lastEntry = currentSession.entries[currentSession.entries.length - 1];
       if (lastEntry) lastEntry.el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     }
   }
+
+  // One IndexedDB transaction per 100ms flush means constant disk writes of
+  // full response bodies on a busy page. Batching them costs at most one
+  // second of unsaved captures, and the page-hide flush covers the common way
+  // of losing them.
+  const DB_FLUSH_MS = 1000;
+  let dbFlushTimer = null;
+
+  function flushDbWrites() {
+    if (dbFlushTimer) { clearTimeout(dbFlushTimer); dbFlushTimer = null; }
+    for (const s of sessions) {
+      if (s.dbId == null || !s.pending || !s.pending.length) continue;
+      dbAddEntries(s.dbId, s.pending.splice(0)).catch(() => {});
+    }
+  }
+
+  function scheduleDbFlush() {
+    if (dbFlushTimer) return;
+    dbFlushTimer = setTimeout(flushDbWrites, DB_FLUSH_MS);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushDbWrites();
+  });
+  window.addEventListener('pagehide', flushDbWrites);
 
   function clearAll(alsoBuffer) {
     entries = [];
@@ -2100,6 +2127,20 @@
     } else {
       for (const s of sections) diagBody.appendChild(s);
     }
+  }
+
+  // Rescanning every capture on every 100ms batch is wasted work for a panel
+  // that is usually closed and a button that is off by default.
+  const DIAG_THROTTLE_MS = 750;
+  let diagTimer = null;
+
+  function scheduleDiagUpdate() {
+    if (!diagBtn || diagBtn.hidden || diagTimer) return;
+    diagTimer = setTimeout(() => {
+      diagTimer = null;
+      if (!diagPanel.hidden) renderDiagnostics();
+      else diagCounts();
+    }, DIAG_THROTTLE_MS);
   }
 
   function closeDiagPanel() { closeSlidePanel(diagPanel); }
