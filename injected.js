@@ -71,10 +71,31 @@
   const isReadableBody = (ct) => READABLE_CT.test(ct) && !STREAM_CT.test(ct);
 
   // ------------------------------------------------------------------ logs
-  const LOG_RATE_LIMIT = 50; // per second
-  let logWindowStart = now();
-  let logWindowCount = 0;
-  let logsDropped = 0;
+  // Sliding one-second window shared by anything that can fire faster than
+  // it's worth capturing: reset-and-warn on window flip, increment-and-check
+  // per call. Console logs and socket frames both need one; this is that
+  // logic written once.
+  function makeRateLimiter(limit, label) {
+    let windowStart = now();
+    let count = 0;
+    let dropped = 0;
+    return function allowed() {
+      const t = now();
+      if (t - windowStart > 1000) {
+        if (dropped > 0) {
+          enqueue({ id: ++seq, kind: 'log', level: 'warn', message: `NetLens: ${dropped} ${label} dropped (rate limit)`, args: [], startedAt: Date.now() });
+        }
+        windowStart = t;
+        count = 0;
+        dropped = 0;
+      }
+      count++;
+      if (count > limit) { dropped++; return false; }
+      return true;
+    };
+  }
+
+  const logAllowed = makeRateLimiter(50, 'log(s)');
 
   function safeStringify(val, depth = 4, seen) {
     if (val instanceof Error) return `${val.message}\n${val.stack || ''}`;
@@ -100,17 +121,7 @@
   }
 
   function enqueueLog(level, args, extra) {
-    const t = now();
-    if (t - logWindowStart > 1000) {
-      if (logsDropped > 0) {
-        enqueue({ id: ++seq, kind: 'log', level: 'warn', message: `NetLens: ${logsDropped} log(s) dropped (rate limit)`, args: [], startedAt: Date.now() });
-      }
-      logWindowStart = t;
-      logWindowCount = 0;
-      logsDropped = 0;
-    }
-    logWindowCount++;
-    if (logWindowCount > LOG_RATE_LIMIT) { logsDropped++; return; }
+    if (!logAllowed()) return;
 
     let message;
     try {
@@ -403,36 +414,11 @@
   // Frames are small and numerous where bodies are large and rare, so they get
   // their own, much tighter cap.
   const MAX_FRAME = 8 * 1024;
-  // A game or trading feed can push hundreds of frames a second. Capturing all
-  // of them would make NetLens the performance problem it exists to find.
-  const FRAME_RATE_LIMIT = 60;
-
-  let frameWindowStart = now();
-  let frameWindowCount = 0;
-  let framesDropped = 0;
   let wsSeq = 0;
 
-  function frameAllowed() {
-    const t = now();
-    if (t - frameWindowStart > 1000) {
-      if (framesDropped > 0) {
-        enqueue({
-          id: ++seq,
-          kind: 'log',
-          level: 'warn',
-          message: `NetLens: ${framesDropped} socket frame(s) dropped (rate limit)`,
-          args: [],
-          startedAt: Date.now(),
-        });
-      }
-      frameWindowStart = t;
-      frameWindowCount = 0;
-      framesDropped = 0;
-    }
-    frameWindowCount++;
-    if (frameWindowCount > FRAME_RATE_LIMIT) { framesDropped++; return false; }
-    return true;
-  }
+  // A game or trading feed can push hundreds of frames a second. Capturing all
+  // of them would make NetLens the performance problem it exists to find.
+  const frameAllowed = makeRateLimiter(60, 'socket frame(s)');
 
   // Reading a Blob back is asynchronous and would cost more than the capture is
   // worth at frame rates, so binary payloads are recorded by size alone.
