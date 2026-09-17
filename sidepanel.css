@@ -93,6 +93,9 @@ body { display: flex; flex-direction: column; }
   cursor: pointer;
   transition: opacity 120ms ease, background-color 120ms ease, border-color 120ms ease, transform 120ms ease-out;
 }
+/* An author display wins over the UA [hidden] rule, so .icon-btn needs this
+   or the hidden attribute silently does nothing. */
+.icon-btn[hidden] { display: none; }
 .icon-btn svg { display: block; }
 .icon-btn:hover { opacity: 1; background: var(--surface-2); border-color: var(--border-strong); }
 .icon-btn:active { transform: scale(0.92); }
