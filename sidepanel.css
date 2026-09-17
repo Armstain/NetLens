@@ -281,15 +281,19 @@ body { display: flex; flex-direction: column; }
 .replay > summary {
   cursor: pointer;
   list-style: none;
+  font-family: var(--sans);
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--faint);
-  display: flex;
+  color: var(--indigo);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 5px 12px;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   user-select: none;
+  transition: border-color 120ms ease, background 120ms ease;
 }
 
 .replay > summary::-webkit-details-marker { display: none; }
@@ -299,7 +303,9 @@ body { display: flex; flex-direction: column; }
   transition: transform 0.15s var(--ease-out);
 }
 .replay[open] > summary::before { transform: rotate(90deg); }
-.replay > summary:hover { color: var(--indigo); }
+.replay > summary:hover { background: var(--surface); border-color: var(--indigo); }
+.replay > summary:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.replay[open] > summary { margin-bottom: 2px; }
 
 .replay-inner {
   display: flex;
