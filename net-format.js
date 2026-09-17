@@ -254,17 +254,12 @@ function prettyJson(text) {
   }
 }
 
-const DIFF_MAX_LINES = 1200;
+// The cap on the *differing middle section* after trimming, not on the raw
+// input — see below. This is the real safety valve, for the rare body where
+// changes are spread throughout rather than localized to a few fields.
+const DIFF_MAX_LINES = 2500;
 
-// Longest-common-subsequence line diff. Returns null above the cap instead of
-// locking the panel up.
-// ponytail: O(n*m) table, ~5.7MB at the cap. Swap in Myers if the cap ever
-// needs lifting.
-function diffLines(before, after) {
-  const a = String(before == null ? '' : before).split('\n');
-  const b = String(after == null ? '' : after).split('\n');
-  if (a.length > DIFF_MAX_LINES || b.length > DIFF_MAX_LINES) return null;
-
+function lcsDiff(a, b) {
   const n = a.length;
   const m = b.length;
   const dp = [];
@@ -286,6 +281,37 @@ function diffLines(before, after) {
   while (i < n) { out.push({ type: '-', text: a[i] }); i++; }
   while (j < m) { out.push({ type: '+', text: b[j] }); j++; }
   return out;
+}
+
+// Longest-common-subsequence line diff, over just the part that actually
+// changed. A replay response is nearly always the same shape as the
+// original — one field differs inside thousands of identical lines — so the
+// O(n*m) DP table only has to cover the stretch between the first and last
+// differing line, found by trimming the common prefix and suffix first. A
+// two-line diff of a 6000-line body now costs a handful of comparisons
+// instead of 36 million.
+// ponytail: still O(n*m) on whatever is left after trimming, so a body that
+// differs throughout rather than in one place can still hit the cap. Swap in
+// Myers if that turns out to matter in practice.
+function diffLines(before, after) {
+  const a = String(before == null ? '' : before).split('\n');
+  const b = String(after == null ? '' : after).split('\n');
+
+  let start = 0;
+  const maxStart = Math.min(a.length, b.length);
+  while (start < maxStart && a[start] === b[start]) start++;
+
+  let aEnd = a.length;
+  let bEnd = b.length;
+  while (aEnd > start && bEnd > start && a[aEnd - 1] === b[bEnd - 1]) { aEnd--; bEnd--; }
+
+  const aMid = a.slice(start, aEnd);
+  const bMid = b.slice(start, bEnd);
+  if (aMid.length > DIFF_MAX_LINES || bMid.length > DIFF_MAX_LINES) return null;
+
+  const prefix = a.slice(0, start).map((text) => ({ type: ' ', text }));
+  const suffix = a.slice(aEnd).map((text) => ({ type: ' ', text }));
+  return prefix.concat(lcsDiff(aMid, bMid), suffix);
 }
 
 // Long runs of identical lines are noise — a 600-line response with three

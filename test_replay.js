@@ -102,13 +102,28 @@ assert.deepStrictEqual(
   ]
 );
 
-// 16. Over the line cap, diffing bails out instead of locking the panel
-const huge = new Array(1300).fill('x').join('\n');
-assert.strictEqual(diffLines(huge, huge + '\ny'), null);
+// 16. A large body where only one field differs deep inside is the common
+//     replay case — the shared prefix and suffix trim away, so this stays
+//     well under the cap instead of bailing out
+const bigBefore = new Array(3000).fill('x').concat(['CHANGED']).concat(new Array(3000).fill('x')).join('\n');
+const bigAfter = new Array(3000).fill('x').concat(['DIFFERENT']).concat(new Array(3000).fill('x')).join('\n');
+const bigRows = diffLines(bigBefore, bigAfter);
+assert.notStrictEqual(bigRows, null);
+assert.deepStrictEqual(
+  bigRows.filter((r) => r.type !== ' '),
+  [{ type: '-', text: 'CHANGED' }, { type: '+', text: 'DIFFERENT' }]
+);
+
+// 17. Over the cap on the part that actually differs — changes spread
+//     throughout rather than localized — diffing bails out instead of
+//     locking the panel up
+const huge = new Array(3000).fill(0).map((_, i) => `line${i}`).join('\n');
+const hugeShuffled = new Array(3000).fill(0).map((_, i) => `line${3000 - i}`).join('\n');
+assert.strictEqual(diffLines(huge, hugeShuffled), null);
 
 // ------------------------------------------------------------- collapseDiff
 
-// 17. Long unchanged runs collapse, and changed lines keep their context
+// 18. Long unchanged runs collapse, and changed lines keep their context
 const many = collapseDiff(
   diffLines(
     Array.from({ length: 30 }, (_, i) => `line${i}`).join('\n'),
@@ -121,14 +136,14 @@ assert.strictEqual(many.filter((r) => r.type === '+').length, 1);
 // 3 lines of context on each side of the change
 assert.strictEqual(many.filter((r) => r.type === ' ').length, 6);
 
-// 18. Nothing changed means everything collapses into a single marker
+// 19. Nothing changed means everything collapses into a single marker
 const allSame = collapseDiff(diffLines('a\nb\nc', 'a\nb\nc'));
 assert.deepStrictEqual(allSame, [{ type: '@', text: '3 unchanged lines', count: 3 }]);
 
-// 19. Singular wording for a one-line run
+// 20. Singular wording for a one-line run
 assert.strictEqual(collapseDiff(diffLines('a', 'a'))[0].text, '1 unchanged line');
 
-// 20. Short diffs are left alone — nothing to collapse
+// 21. Short diffs are left alone — nothing to collapse
 assert.deepStrictEqual(
   collapseDiff(diffLines('a\nb', 'a\nX')),
   [{ type: ' ', text: 'a' }, { type: '-', text: 'b' }, { type: '+', text: 'X' }]
