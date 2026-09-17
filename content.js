@@ -349,6 +349,34 @@
       sendResponse({ buffer });
       return;
     }
+    if (msg.type === 'netlens:replay') {
+      const rid = `r${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      let timer = null;
+      let done = false;
+      const finish = (result) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener('message', onResult);
+        if (timer) clearTimeout(timer);
+        try { sendResponse(result); } catch {}
+      };
+      const onResult = (event) => {
+        if (event.source !== window) return;
+        const d = event.data;
+        if (!d || d.__netlens_replay_result !== true || d.rid !== rid) return;
+        finish(d.result);
+      };
+      window.addEventListener('message', onResult);
+      // A request that never settles would otherwise hold both this listener
+      // and the sendResponse channel open for the life of the page.
+      timer = setTimeout(() => finish({ ok: false, error: 'Replay timed out after 30s' }), 30000);
+      try {
+        window.postMessage({ __netlens_replay: true, rid, req: msg.req || {} }, '*');
+      } catch (err) {
+        finish({ ok: false, error: String((err && err.message) || err) });
+      }
+      return true;
+    }
     if (msg.type === 'netlens:clear') {
       buffer = [];
       sendResponse({ ok: true });

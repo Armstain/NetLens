@@ -162,12 +162,22 @@
     let url = '';
     let reqHeaders = {};
     let reqBody = null;
+    let reqBodyTruncated = false;
+    // Replay is only faithful if these travel with the entry. A request whose
+    // credentials/mode are guessed at replay time either loses its cookies or
+    // gets blocked by CORS, and either way the replay is not the request.
+    let credentials = null;
+    let mode = null;
+    let redirect = null;
 
     try {
       if (typeof Request !== 'undefined' && input instanceof Request) {
         method = input.method || 'GET';
         url = input.url;
         input.headers.forEach((v, k) => { reqHeaders[k] = v; });
+        credentials = input.credentials || null;
+        mode = input.mode || null;
+        redirect = input.redirect || null;
       } else {
         url = String(input);
       }
@@ -176,7 +186,13 @@
         if (init.headers) {
           try { new Headers(init.headers).forEach((v, k) => { reqHeaders[k] = v; }); } catch {}
         }
-        if ('body' in init) reqBody = serializeRequestBody(init.body);
+        if ('body' in init) {
+          reqBody = serializeRequestBody(init.body);
+          reqBodyTruncated = typeof init.body === 'string' && init.body.length > MAX_BODY;
+        }
+        if (init.credentials) credentials = init.credentials;
+        if (init.mode) mode = init.mode;
+        if (init.redirect) redirect = init.redirect;
       }
     } catch {}
 
@@ -217,6 +233,10 @@
               duration: now() - start,
               requestHeaders: reqHeaders,
               requestBody: reqBody,
+              requestBodyTruncated: reqBodyTruncated,
+              credentials,
+              mode,
+              redirect,
               responseHeaders,
               contentType: ct,
             };
@@ -252,6 +272,10 @@
           duration: now() - start,
           requestHeaders: reqHeaders,
           requestBody: reqBody,
+          requestBodyTruncated: reqBodyTruncated,
+          credentials,
+          mode,
+          redirect,
           responseHeaders: {},
           responseBody: null,
           responseSize: 0,
@@ -293,6 +317,8 @@
       meta.start = now();
       meta.startedAt = Date.now();
       meta.requestBody = serializeRequestBody(body);
+      meta.requestBodyTruncated = typeof body === 'string' && body.length > MAX_BODY;
+      meta.credentials = this.withCredentials ? 'include' : 'same-origin';
 
       // Bind loadend exactly once per XHR instance. A reused XHR (open+send
       // called again on the same object — some hand-rolled wrappers and
@@ -346,6 +372,8 @@
               duration,
               requestHeaders: m.requestHeaders,
               requestBody: m.requestBody,
+              requestBodyTruncated: m.requestBodyTruncated,
+              credentials: m.credentials,
               responseHeaders,
               responseBody,
               responseSize,
@@ -359,4 +387,85 @@
     }
     return origSend.apply(this, arguments);
   };
+
+  // --------------------------------------------------------------- replay
+  // The browser owns these header names and either rejects or silently drops
+  // an attempt to set them, so a captured Cookie/Host/Origin cannot be sent
+  // back verbatim. Cookies still travel on the replay — that is what
+  // `credentials` is for, and setting the header by hand would not work.
+  const FORBIDDEN_HEADERS = /^(accept-charset|accept-encoding|access-control-request-headers|access-control-request-method|connection|content-length|cookie|cookie2|date|dnt|expect|host|keep-alive|origin|referer|set-cookie|te|trailer|transfer-encoding|upgrade|via|proxy-|sec-)/i;
+
+  function replayHeaders(headers) {
+    const out = {};
+    for (const k of Object.keys(headers || {})) {
+      if (!FORBIDDEN_HEADERS.test(k)) out[k] = headers[k];
+    }
+    return out;
+  }
+
+  async function runReplay(req) {
+    const start = now();
+    const method = String(req.method || 'GET').toUpperCase();
+    const init = { method, headers: replayHeaders(req.headers), cache: 'no-store' };
+    if (req.credentials) init.credentials = req.credentials;
+    if (req.mode) init.mode = req.mode;
+    if (req.redirect) init.redirect = req.redirect;
+    // fetch throws outright if a GET or HEAD carries a body.
+    if (req.body != null && req.body !== '' && method !== 'GET' && method !== 'HEAD') {
+      init.body = req.body;
+    }
+
+    // origFetch, not window.fetch: replaying through the patched copy would
+    // file the replay as a fresh captured row and bury the original.
+    const res = await origFetch(req.url, init);
+    const ct = res.headers.get('content-type') || '';
+    const responseHeaders = {};
+    res.headers.forEach((v, k) => { responseHeaders[k] = v; });
+
+    let responseBody = null;
+    let responseSize = 0;
+    let truncated = false;
+    if (isReadableBody(ct)) {
+      const t = truncate(await res.text());
+      responseBody = t.body;
+      responseSize = t.size;
+      truncated = t.truncated;
+    } else if (ct) {
+      responseBody = `[${ct}]`;
+    }
+
+    return {
+      ok: true,
+      method,
+      url: absolutize(req.url),
+      status: res.status,
+      statusText: res.statusText,
+      duration: now() - start,
+      requestHeaders: init.headers,
+      requestBody: init.body == null ? null : init.body,
+      responseHeaders,
+      responseBody,
+      responseSize,
+      truncated,
+      contentType: ct,
+    };
+  }
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const d = event.data;
+    if (!d || d.__netlens_replay !== true) return;
+    // The page can post this shape itself, but a replay grants it nothing it
+    // could not already do with its own fetch and its own cookies. The panel
+    // only renders results whose rid it issued.
+    const rid = d.rid;
+    const reply = (result) => {
+      try { window.postMessage({ __netlens_replay_result: true, rid, result }, '*'); } catch {}
+    };
+    try {
+      runReplay(d.req || {}).then(reply, (err) => reply({ ok: false, error: (err && err.message) || String(err) }));
+    } catch (err) {
+      reply({ ok: false, error: (err && err.message) || String(err) });
+    }
+  });
 })();
