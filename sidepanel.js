@@ -1958,10 +1958,13 @@
 
   // ---------------------------------------------------------- live batches
   chrome.runtime.onMessage.addListener((msg, sender) => {
-    if (!msg || msg.type !== 'netlens:batch') return;
-    if (!sender.tab || sender.tab.id !== currentTabId) return;
-    if (paused) return;
-    addEntries(msg.batch);
+    if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
+    if (msg.type === 'netlens:batch') {
+      if (paused) return;
+      addEntries(msg.batch);
+    } else if (msg.type === 'netlens:locate' && msg.id != null) {
+      jumpToEntryId(msg.id);
+    }
   });
 
   // -------------------------------------------------------------- controls
@@ -2258,8 +2261,10 @@
   const diagBody = document.getElementById('diagBody');
 
   function jumpToEntry(d) {
-    const entry = entries.find((e) => e.data === d);
-    if (!entry) return;
+    // Diagnostics passes the live object by reference; a jump requested from
+    // the page's own toast only has the id that crossed the message boundary.
+    const entry = entries.find((e) => e.data === d || (e.data && d && e.data.id === d.id));
+    if (!entry) return false;
     entry.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (!entry.el.classList.contains('open')) {
       const head = entry.el.querySelector('.row-head');
@@ -2267,6 +2272,16 @@
     }
     entry.el.classList.add('jump-flash');
     setTimeout(() => entry.el.classList.remove('jump-flash'), 900);
+    return true;
+  }
+
+  // The toast that asked for this can fire the instant the panel finishes
+  // opening, before requestDump's round trip has populated entries. A couple
+  // of retries covers that without polling indefinitely for a ghost id.
+  function jumpToEntryId(id, attemptsLeft = 5) {
+    if (jumpToEntry({ id })) return;
+    if (attemptsLeft <= 0) return;
+    setTimeout(() => jumpToEntryId(id, attemptsLeft - 1), 300);
   }
 
   function diagFindingRow(d, extra) {
