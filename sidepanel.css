@@ -1383,3 +1383,320 @@ mark.hl {
 }
 
 .frame-body { padding: 2px 0 6px 22px; }
+
+/* ------------------------------------------------ Reveal API Source */
+.reveal-elem-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.reveal-elem-tag { color: var(--indigo); font-weight: 600; }
+.reveal-elem-preview { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+.reveal-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.reveal-card.primary { border-left: 3px solid #10b981; }
+.reveal-card.alternate { border-left: 3px solid var(--border-strong); opacity: 0.9; }
+
+.reveal-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.reveal-url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.reveal-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.conf-badge {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--mono);
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+.conf-badge.conf-high {
+  background: #064e3b;
+  color: #34d399;
+  border: 1px solid #059669;
+}
+.conf-badge.conf-medium {
+  background: #78350f;
+  color: #fbbf24;
+  border: 1px solid #d97706;
+}
+.conf-badge.conf-low {
+  background: #1f2937;
+  color: #9ca3af;
+  border: 1px solid #374151;
+}
+
+.conf-reason {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.reveal-details-note {
+  font-size: 11px;
+  color: var(--faint);
+  width: 100%;
+  margin-top: 2px;
+}
+
+.reveal-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--faint);
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  letter-spacing: 0.5px;
+}
+
+.reveal-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reveal-path-val {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.reveal-path-val code {
+  flex: 1;
+  overflow-wrap: anywhere;
+  color: #79c0ff;
+  font-size: 11px;
+}
+
+.reveal-val-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.reveal-val-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.reveal-val-text {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  max-height: 80px;
+  overflow: auto;
+}
+
+.reveal-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.reveal-provenance-flow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.flow-step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.flow-ui { flex: 0 1 auto; max-width: 40%; }
+.flow-api { flex: 1 1 auto; min-width: 0; }
+.flow-arrow {
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.flow-tag {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--faint);
+  letter-spacing: 0.5px;
+}
+.flow-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-path {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #79c0ff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jtree .leaf.j-match {
+  background: rgba(16, 185, 129, 0.25);
+  border: 1px solid #10b981;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+.jtree .leaf.j-match::after {
+  content: "◀ MATCH";
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #34d399;
+  background: #064e3b;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid #059669;
+  margin-left: 8px;
+}
+.jtree .leaf.j-match.j-match-flash {
+  animation: jMatchPulse 1.2s ease-out;
+}
+@keyframes jMatchPulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.8); }
+  70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.reveal-empty-box {
+  padding: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.reveal-empty-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.reveal-empty-desc {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  margin: 0;
+}
+
+.reveal-alt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reveal-container-banner {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #34d399;
+  font-family: var(--mono);
+}
+
+.reveal-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.reveal-matched-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.reveal-matched-item:last-child {
+  border-bottom: none;
+}
+
+.reveal-matched-left {
+  flex: 0 1 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reveal-matched-ui {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.reveal-matched-arrow {
+  color: #10b981;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.reveal-matched-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reveal-matched-path {
+  font-size: 10px;
+  color: #79c0ff;
+}
+

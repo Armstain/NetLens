@@ -15,6 +15,7 @@
       <span class="count" id="count">0</span>
     </div>
     <div class="controls">
+      <button id="revealBtn" class="icon-btn" title="Reveal API Source (click element on page)" aria-label="Reveal API Source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/><circle cx="12" cy="12" r="3"/></svg></button>
       <button id="inspectBtn" class="icon-btn" title="Inspect an element on the page" aria-label="Inspect element"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="7"/><line x1="12" y1="1" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="23"/><line x1="1" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="23" y2="12"/></svg></button>
       <button id="paletteBtn" class="icon-btn" title="Scan page fonts and colours" aria-label="Page styles"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/><circle cx="15" cy="9" r="1.4" fill="currentColor"/><circle cx="9.5" cy="14.5" r="1.4" fill="currentColor"/><path d="M14 13.5c2 0 3.2 1 3.2 2.3S16 18 14.6 18"/></svg></button>
       <button id="storageBtn" class="icon-btn" title="View storage (sessionStorage, cookies)" aria-label="View storage" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg></button>
@@ -40,6 +41,19 @@
       <input type="checkbox" id="showLogs" />
       <span>Console logs</span>
     </label>
+  </div>
+
+  <div id="revealPanel" class="decoder-panel" hidden>
+    <div class="decoder-panel-head">
+      <span>Reveal API Source</span>
+      <div class="detail-actions" style="padding:0;">
+        <button id="revealPickBtn" class="mini-btn" type="button">Pick value</button>
+        <button id="revealPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div id="revealBody" class="storage-sections">
+      <div class="note storage-empty">Click "Pick value", then click any visible text, price, ID, or image on the page to trace its API source.</div>
+    </div>
   </div>
 
   <div id="inspectPanel" class="decoder-panel" hidden>
@@ -300,6 +314,7 @@
   <script src="css-format.js"></script>
   <script src="net-format.js"></script>
   <script src="store.js"></script>
+  <script src="provenance.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
