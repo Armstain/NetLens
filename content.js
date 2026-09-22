@@ -27,7 +27,9 @@
   const TOAST_BODY_CHARS = 4000;
   const TOAST_PEEK_CHARS = 120;
 
-  let toastSettings = normalizeToastSettings(null);
+  let toastSettings = typeof normalizeToastSettings === 'function'
+    ? normalizeToastSettings(null)
+    : { enabled: false, position: 'bottom-right' };
   try {
     chrome.storage.local.get(['netlensToastSettings'], (res) => {
       toastSettings = normalizeToastSettings(res && res.netlensToastSettings);
@@ -565,11 +567,21 @@
       return;
     }
     if (msg.type === 'netlens:inspect:start') {
-      startPicker();
+      startPicker('inspect');
       sendResponse({ ok: true });
       return;
     }
     if (msg.type === 'netlens:inspect:stop') {
+      stopPicker();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'netlens:reveal:start') {
+      startPicker('reveal');
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === 'netlens:reveal:stop') {
       stopPicker();
       sendResponse({ ok: true });
       return;
@@ -602,18 +614,171 @@
   let overlayEl = null;
   let labelEl = null;
   let pickerActive = false;
+  let pickerMode = 'inspect';
   let rafPending = false;
   let lastHovered = null;
 
+  let initialHtmlSnapshot = null;
+  function captureInitialHtml() {
+    if (initialHtmlSnapshot || !document.documentElement) return;
+    try { initialHtmlSnapshot = document.documentElement.innerHTML.slice(0, 500000); } catch {}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', captureInitialHtml, { once: true });
+  } else {
+    captureInitialHtml();
+  }
+
+  function extractElementContext(el) {
+    if (!el) return null;
+    if (el.nodeType === 3) el = el.parentElement;
+    if (!el || el.nodeType !== 1) return null;
+
+    const text = (el.innerText || el.textContent || '').trim();
+    const tag = (el.tagName || '').toLowerCase();
+    const id = el.id || '';
+    const classes = typeof el.className === 'string'
+      ? el.className.trim().split(/\s+/).filter(Boolean)
+      : [];
+
+    const attributes = {};
+    for (const attr of el.attributes || []) {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith('data-') || ['src', 'href', 'value', 'placeholder', 'aria-label', 'alt', 'title', 'id'].includes(name)) {
+        attributes[name] = attr.value;
+      }
+    }
+
+    let nearbyText = '';
+    if (el.previousElementSibling) {
+      const prevText = (el.previousElementSibling.textContent || '').trim();
+      if (prevText.length > 0 && prevText.length < 50) nearbyText += prevText + ' ';
+    }
+    const label = el.closest ? (el.closest('label') || (id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null)) : null;
+    if (label) nearbyText += (label.textContent || '').trim() + ' ';
+
+    if (tag === 'td') {
+      const tr = el.parentElement;
+      if (tr) {
+        const cellIdx = Array.from(tr.children).indexOf(el);
+        const table = tr.closest ? tr.closest('table') : null;
+        if (table && cellIdx !== -1) {
+          const th = table.querySelector(`thead th:nth-child(${cellIdx + 1})`) || table.querySelector(`tr th:nth-child(${cellIdx + 1})`);
+          if (th) nearbyText += (th.textContent || '').trim() + ' ';
+        }
+      }
+    }
+
+    function findCardContainer(node) {
+      if (!node || node === document.body || node === document.documentElement) return null;
+      const matched = node.closest ? node.closest('tr, li, article, [class*="card"], [class*="item"], [class*="product"], [class*="hotel"], [class*="result"], [class*="listing"], [class*="entry"], [class*="tile"], [data-testid], [data-id]') : null;
+      if (matched && matched !== document.body && matched !== document.documentElement) return matched;
+
+      let curr = node.parentElement;
+      let best = null;
+      let depth = 0;
+      while (curr && curr !== document.body && curr !== document.documentElement && depth < 7) {
+        const hasHeading = curr.querySelector ? curr.querySelector('h1, h2, h3, h4, h5, h6') : null;
+        if (hasHeading && curr.contains(node) && curr !== node) {
+          best = curr;
+        }
+        curr = curr.parentElement;
+        depth++;
+      }
+      return (best && best !== document.body && best !== document.documentElement) ? best : null;
+    }
+
+    const containerTexts = [];
+    const container = findCardContainer(el);
+    if (container) {
+      const headings = Array.from(container.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+        .map(h => (h.innerText || h.textContent || '').trim())
+        .filter(s => s.length > 2);
+      containerTexts.push(...headings);
+
+      const raw = container.innerText || container.textContent || '';
+      const lines = raw.split(/[\n\r]+/).map(s => s.trim()).filter(s => s.length > 1 && s.length < 120);
+      containerTexts.push(...lines.slice(0, 25));
+    }
+
+    captureInitialHtml();
+    const inInitialHtml = Boolean(initialHtmlSnapshot && text.length > 2 && initialHtmlSnapshot.includes(text));
+
+    const isContainerElem = el !== document.body && el !== document.documentElement && el.children && el.children.length >= 2 && (
+      (el.matches && el.matches('tr, li, article, [class*="card"], [class*="item"], [class*="product"], [class*="hotel"], [class*="flight"], [class*="result"], [class*="listing"], [class*="tile"], [data-testid], [data-id]')) ||
+      (el.querySelectorAll && el.querySelectorAll('h1, h2, h3, h4, h5, h6, img[src], a[href], [class*="price"], [class*="badge"], [class*="tag"], [class*="status"], [class*="title"], [class*="name"], td, th, p, span').length >= 2) ||
+      text.length > 50
+    );
+
+    const subElements = [];
+    if (isContainerElem) {
+      const candidates = el.querySelectorAll('h1, h2, h3, h4, h5, h6, img[src], a[href], [class*="price"], [class*="badge"], [class*="tag"], [class*="status"], [class*="title"], [class*="name"], td, th, p, span');
+      const seen = new Set();
+      for (const child of candidates) {
+        if (subElements.length >= 15) break;
+        const isImg = child.tagName.toLowerCase() === 'img';
+        const src = isImg ? child.getAttribute('src') : null;
+        const cText = (child.innerText || child.textContent || '').trim();
+
+        if (isImg && src) {
+          if (!seen.has(src)) {
+            seen.add(src);
+            subElements.push({
+              text: '',
+              tag: 'img',
+              classes: typeof child.className === 'string' ? child.className.trim().split(/\s+/).filter(Boolean) : [],
+              attributes: { src },
+              nearbyText: '',
+              containerTexts: [src],
+            });
+          }
+        } else if (cText && cText.length >= 2 && cText.length < 100 && !seen.has(cText)) {
+          if (child.children.length > 2) continue;
+          seen.add(cText);
+          subElements.push({
+            text: cText,
+            tag: child.tagName.toLowerCase(),
+            classes: typeof child.className === 'string' ? child.className.trim().split(/\s+/).filter(Boolean) : [],
+            attributes: {},
+            nearbyText: '',
+            containerTexts: [cText],
+          });
+        }
+      }
+    }
+
+    const isContainer = isContainerElem && subElements.length >= 2;
+
+    return {
+      text,
+      tag,
+      id,
+      classes,
+      attributes,
+      nearbyText: nearbyText.trim(),
+      containerTexts,
+      inInitialHtml,
+      isContainer,
+      subElements: isContainer ? subElements : [],
+    };
+  }
+
   function ensureOverlay() {
-    if (overlayEl) return;
+    if (overlayEl) {
+      const isReveal = pickerMode === 'reveal';
+      overlayEl.style.background = isReveal ? 'rgba(16, 185, 129, 0.15)' : 'rgba(99, 102, 241, 0.15)';
+      overlayEl.style.border = isReveal ? '1px solid #10b981' : '1px solid #818cf8';
+      labelEl.style.borderColor = isReveal ? '#059669' : '#30363d';
+      return;
+    }
+    const isReveal = pickerMode === 'reveal';
     overlayEl = document.createElement('div');
-    overlayEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
-      'background:rgba(99,102,241,0.15);border:1px solid #818cf8;box-sizing:border-box;transition:none;';
+    overlayEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;box-sizing:border-box;transition:none;' +
+      (isReveal ? 'background:rgba(16, 185, 129, 0.15);border:1px solid #10b981;' : 'background:rgba(99, 102, 241, 0.15);border:1px solid #818cf8;');
     labelEl = document.createElement('div');
     labelEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
       'background:#161b22;color:#e6edf3;font:11px ui-monospace,monospace;padding:2px 6px;' +
-      'border-radius:4px;border:1px solid #30363d;white-space:nowrap;';
+      'border-radius:4px;border:1px solid ' + (isReveal ? '#059669;' : '#30363d;') + 'white-space:nowrap;';
     document.documentElement.appendChild(overlayEl);
     document.documentElement.appendChild(labelEl);
   }
@@ -652,7 +817,11 @@
     const id = el.id ? `#${el.id}` : '';
     const cls = typeof el.className === 'string' && el.className.trim()
       ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
-    labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
+    if (pickerMode === 'reveal') {
+      labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  Click to reveal API source`;
+    } else {
+      labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
+    }
     const top = rect.top > 20 ? rect.top - 20 : rect.bottom + 2;
     labelEl.style.top = `${toLocalY(top)}px`;
     labelEl.style.left = `${toLocalX(rect.left)}px`;
@@ -799,13 +968,17 @@
 
   function onMouseMove(e) {
     lastHovered = e.target;
+    let t = e.target;
+    if (t && t.nodeType === 3) t = t.parentElement;
+    if (!t || t.nodeType !== 1) return;
+    lastHovered = t;
     if (rafPending) return;
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
       if (!pickerActive || !lastHovered) return;
       positionOverlay(lastHovered);
-      sendHover(lastHovered);
+      if (pickerMode !== 'reveal') sendHover(lastHovered);
     });
   }
 
@@ -930,13 +1103,32 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    lockOn(lastHovered || e.target);
+    let target = lastHovered || e.target;
+    if (target && target.nodeType === 3) target = target.parentElement;
+    if (pickerMode === 'reveal') {
+      const context = extractElementContext(target);
+      stopPicker();
+      if (context) {
+        try {
+          chrome.runtime.sendMessage({ type: 'netlens:reveal:result', context }, () => {
+            if (chrome.runtime.lastError) {
+              try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+            }
+          });
+        } catch {}
+      }
+      return;
+    }
+    if (target && target.nodeType === 1) lockOn(target);
   }
 
   function onKeydown(e) {
     if (e.key !== 'Escape') return;
+    const mode = pickerMode;
     stopPicker();
-    try { chrome.runtime.sendMessage({ type: 'netlens:inspect:cancelled' }, () => { void chrome.runtime.lastError; }); } catch {}
+    try {
+      chrome.runtime.sendMessage({ type: mode === 'reveal' ? 'netlens:reveal:cancelled' : 'netlens:inspect:cancelled' }, () => { void chrome.runtime.lastError; });
+    } catch {}
   }
 
   // ---------------------------------------------------- page-wide styles
@@ -1007,9 +1199,10 @@
     };
   }
 
-  function startPicker() {
+  function startPicker(mode = 'inspect') {
     if (pickerActive) return;
     pickerActive = true;
+    pickerMode = mode;
     ensureOverlay();
     document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('click', onClick, true);
