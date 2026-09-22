@@ -352,6 +352,54 @@ function dayLabel(ts, now) {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+const DEFAULT_SHORTCUTS = {
+  reveal: 'Alt+Shift+R',
+  inspect: 'Alt+Shift+C',
+};
+
+const SHORTCUT_OPTIONS = [
+  'Alt+Shift+R',
+  'Alt+Shift+C',
+  'Alt+Shift+X',
+  'Alt+Shift+S',
+  'Alt+Shift+I',
+  'Alt+R',
+  'Alt+C',
+  'Alt+X',
+  'Ctrl+Shift+R',
+  'Ctrl+Shift+C',
+  'Ctrl+Shift+X',
+  'none',
+];
+
+function normalizeShortcuts(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return {
+    reveal: typeof s.reveal === 'string' && (SHORTCUT_OPTIONS.includes(s.reveal) || s.reveal === 'none') ? s.reveal : DEFAULT_SHORTCUTS.reveal,
+    inspect: typeof s.inspect === 'string' && (SHORTCUT_OPTIONS.includes(s.inspect) || s.inspect === 'none') ? s.inspect : DEFAULT_SHORTCUTS.inspect,
+  };
+}
+
+function matchesShortcut(e, shortcutStr) {
+  if (!shortcutStr || shortcutStr === 'none' || !e) return false;
+  const parts = shortcutStr.split('+').map((s) => s.trim().toLowerCase());
+  const needsCtrl = parts.includes('ctrl') || parts.includes('control');
+  const needsAlt = parts.includes('alt');
+  const needsShift = parts.includes('shift');
+  const needsMeta = parts.includes('cmd') || parts.includes('meta') || parts.includes('command');
+  const keyPart = parts.find((p) => !['ctrl', 'control', 'alt', 'shift', 'cmd', 'meta', 'command'].includes(p));
+
+  if (Boolean(e.ctrlKey) !== needsCtrl) return false;
+  if (Boolean(e.altKey) !== needsAlt) return false;
+  if (Boolean(e.shiftKey) !== needsShift) return false;
+  if (Boolean(e.metaKey) !== needsMeta) return false;
+  if (!keyPart) return false;
+
+  const k = (e.key || '').toLowerCase();
+  const c = (e.code || '').toLowerCase();
+  return k === keyPart || c === `key${keyPart}` || c === `digit${keyPart}`;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     fmtDuration, fmtSize, statusClass, isError, isLog, isApi, pathOf,
@@ -361,5 +409,6 @@ if (typeof module !== 'undefined') {
     dayLabel,
     TOAST_METHODS, TOAST_METHOD_GROUPS, TOAST_STATUS_CLASSES, TOAST_POSITIONS,
     DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, normalizeToastSettings, buildUrlTest, toastMatch,
+    DEFAULT_SHORTCUTS, SHORTCUT_OPTIONS, normalizeShortcuts, matchesShortcut,
   };
 }

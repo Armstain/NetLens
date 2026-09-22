@@ -21,3 +21,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .catch((err) => sendResponse({ error: String(err && err.message || err) }));
   return true;
 });
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  const tabId = tab && tab.id;
+  if (!tabId) return;
+  const type = command === 'pick-reveal' ? 'netlens:reveal:start' : (command === 'pick-inspect' ? 'netlens:inspect:start' : null);
+  if (!type) return;
+
+  chrome.tabs.sendMessage(tabId, { type }, () => {
+    if (chrome.runtime.lastError) {
+      chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['css-format.js', 'net-format.js', 'decoders.js', 'provenance.js', 'content.js']
+      }, () => {
+        if (!chrome.runtime.lastError) chrome.tabs.sendMessage(tabId, { type }).catch(() => {});
+      });
+    }
+  });
+});
+
