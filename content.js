@@ -30,16 +30,29 @@
   let toastSettings = typeof normalizeToastSettings === 'function'
     ? normalizeToastSettings(null)
     : { enabled: false, position: 'bottom-right' };
+  let shortcutSettings = typeof normalizeShortcuts === 'function'
+    ? normalizeShortcuts(null)
+    : { reveal: 'Alt+Shift+R', inspect: 'Alt+Shift+C' };
   try {
-    chrome.storage.local.get(['netlensToastSettings'], (res) => {
-      toastSettings = normalizeToastSettings(res && res.netlensToastSettings);
-      applyToastPosition();
+    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts'], (res) => {
+      if (res && res.netlensToastSettings) {
+        toastSettings = normalizeToastSettings(res.netlensToastSettings);
+        applyToastPosition();
+      }
+      if (res && res.netlensShortcuts) {
+        shortcutSettings = normalizeShortcuts(res.netlensShortcuts);
+      }
     });
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes.netlensToastSettings) return;
-      toastSettings = normalizeToastSettings(changes.netlensToastSettings.newValue);
-      if (!toastSettings.enabled) clearToasts();
-      else applyToastPosition();
+      if (area !== 'local') return;
+      if (changes.netlensToastSettings) {
+        toastSettings = normalizeToastSettings(changes.netlensToastSettings.newValue);
+        if (!toastSettings.enabled) clearToasts();
+        else applyToastPosition();
+      }
+      if (changes.netlensShortcuts) {
+        shortcutSettings = normalizeShortcuts(changes.netlensShortcuts.newValue);
+      }
     });
   } catch {}
 
@@ -760,7 +773,24 @@
       inInitialHtml,
       isContainer,
       subElements: isContainer ? subElements : [],
+      ssrPayloads: extractSsrPayloads(),
     };
+  }
+
+  function extractSsrPayloads() {
+    const scripts = document.querySelectorAll('script[type="application/json"], script[type="application/ld+json"]');
+    const payloads = [];
+    let total = 0;
+    for (const s of scripts) {
+      if (payloads.length >= 8) break;
+      const text = (s.textContent || '').trim();
+      if (text.length < 2 || text.length > 750000 || total + text.length > 2000000) continue;
+      total += text.length;
+      const name = s.id === '__NEXT_DATA__' ? 'Next.js (__NEXT_DATA__)'
+        : (s.id ? `#${s.id}` : (s.type.includes('ld') ? 'JSON-LD' : (s.getAttribute('data-name') || 'SSR JSON')));
+      payloads.push({ id: s.id || `ssr-${payloads.length}`, name, json: text });
+    }
+    return payloads;
   }
 
   function ensureOverlay() {
@@ -1091,7 +1121,13 @@
       return;
     }
     stopPicker();
-    try { chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, () => { void chrome.runtime.lastError; }); } catch {}
+    try {
+      chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, () => {
+        if (chrome.runtime.lastError) {
+          try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+        }
+      });
+    } catch {}
     // Stylesheet work can await a cross-origin fetch, so it follows the result
     // as a second message rather than holding the panel up.
     collectStateRules(el).then((states) => {
@@ -1200,7 +1236,13 @@
   }
 
   function startPicker(mode = 'inspect') {
-    if (pickerActive) return;
+    if (pickerActive) {
+      if (pickerMode === mode) {
+        stopPicker();
+        return;
+      }
+      stopPicker();
+    }
     pickerActive = true;
     pickerMode = mode;
     ensureOverlay();
@@ -1221,4 +1263,25 @@
     // DEFAULTS survives; only the frame goes, so a later pick reuses the cache.
     if (defaultsFrame) { defaultsFrame.remove(); defaultsFrame = null; }
   }
+
+  function isEditableTarget(target) {
+    if (!target) return false;
+    const tag = (target.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || Boolean(target.isContentEditable);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (isEditableTarget(e.target)) return;
+    if (typeof matchesShortcut === 'function') {
+      if (matchesShortcut(e, shortcutSettings.reveal)) {
+        e.preventDefault();
+        e.stopPropagation();
+        startPicker('reveal');
+      } else if (matchesShortcut(e, shortcutSettings.inspect)) {
+        e.preventDefault();
+        e.stopPropagation();
+        startPicker('inspect');
+      }
+    }
+  }, true);
 })();
