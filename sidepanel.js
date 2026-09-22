@@ -356,13 +356,66 @@
     } catch {}
   }
 
+  let shortcutSettings = typeof normalizeShortcuts === 'function'
+    ? normalizeShortcuts(null)
+    : { reveal: 'Alt+Shift+R', inspect: 'Alt+Shift+C' };
+
+  const shortcutEls = {
+    reveal: document.getElementById('setShortcutReveal'),
+    inspect: document.getElementById('setShortcutInspect'),
+    openBtn: document.getElementById('openShortcutsBtn'),
+  };
+
+  if (shortcutEls.reveal && shortcutEls.inspect && typeof SHORTCUT_OPTIONS !== 'undefined') {
+    for (const opt of SHORTCUT_OPTIONS) {
+      const text = opt === 'none' ? 'Disabled' : opt;
+      const o1 = document.createElement('option');
+      o1.value = opt;
+      o1.textContent = text;
+      shortcutEls.reveal.appendChild(o1);
+
+      const o2 = document.createElement('option');
+      o2.value = opt;
+      o2.textContent = text;
+      shortcutEls.inspect.appendChild(o2);
+    }
+  }
+
+  function renderShortcuts() {
+    if (shortcutEls.reveal) shortcutEls.reveal.value = shortcutSettings.reveal;
+    if (shortcutEls.inspect) shortcutEls.inspect.value = shortcutSettings.inspect;
+  }
+
+  function saveShortcuts(patch) {
+    shortcutSettings = normalizeShortcuts({ ...shortcutSettings, ...patch });
+    renderShortcuts();
+    try {
+      chrome.storage.local.set({ netlensShortcuts: shortcutSettings });
+    } catch {}
+  }
+
   try {
-    chrome.storage.local.get(['netlensToastSettings'], (res) => {
+    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts'], (res) => {
       toastSettings = normalizeToastSettings(res && res.netlensToastSettings);
+      if (res && res.netlensShortcuts) shortcutSettings = normalizeShortcuts(res.netlensShortcuts);
       renderSettings();
+      renderShortcuts();
     });
   } catch {}
   renderSettings();
+  renderShortcuts();
+
+  if (shortcutEls.reveal) {
+    shortcutEls.reveal.addEventListener('change', () => saveShortcuts({ reveal: shortcutEls.reveal.value }));
+  }
+  if (shortcutEls.inspect) {
+    shortcutEls.inspect.addEventListener('change', () => saveShortcuts({ inspect: shortcutEls.inspect.value }));
+  }
+  if (shortcutEls.openBtn) {
+    shortcutEls.openBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+    });
+  }
 
   setEls.enabled.addEventListener('change', () => saveSettings({ enabled: setEls.enabled.checked }));
   setEls.gqlMutationsOnly.addEventListener('change', () => saveSettings({ gqlMutationsOnly: setEls.gqlMutationsOnly.checked }));
@@ -409,6 +462,7 @@
   document.getElementById('setReset').addEventListener('click', () => {
     toastSettings = normalizeToastSettings(null);
     saveSettings({});
+    saveShortcuts(normalizeShortcuts(null));
   });
 
   document.getElementById('setTestToast').addEventListener('click', () => {
@@ -2865,7 +2919,10 @@
 
   function renderCandidateCard(candidate, isPrimary) {
     const card = document.createElement('div');
-    card.className = isPrimary ? 'reveal-card primary' : 'reveal-card alternate';
+    const isSsr = candidate.sourceType === 'ssr' || (candidate.entry && candidate.entry.kind === 'ssr');
+    card.className = isPrimary
+      ? (isSsr ? 'reveal-card primary ssr-card' : 'reveal-card primary')
+      : (isSsr ? 'reveal-card alternate ssr-card' : 'reveal-card alternate');
 
     const head = document.createElement('div');
     head.className = 'reveal-card-head';
@@ -2876,8 +2933,13 @@
     method.textContent = candidate.method;
 
     const status = document.createElement('span');
-    status.className = `status ${statusClass(candidate.entry)}`;
-    status.textContent = candidate.status ? String(candidate.status) : '';
+    if (isSsr) {
+      status.className = 'status status-ssr';
+      status.textContent = 'HYDRATION';
+    } else {
+      status.className = `status ${statusClass(candidate.entry)}`;
+      status.textContent = candidate.status ? String(candidate.status) : '';
+    }
 
     const urlSpan = document.createElement('span');
     urlSpan.className = 'path reveal-url';
@@ -2885,7 +2947,7 @@
     urlSpan.title = candidate.url;
 
     head.append(method, status, urlSpan);
-    addCopyButton(head, candidate.url, 'Copy URL');
+    addCopyButton(head, candidate.url, isSsr ? 'Copy source name' : 'Copy URL');
     card.appendChild(head);
 
     const metaRow = document.createElement('div');
@@ -2893,7 +2955,9 @@
 
     const confBadge = document.createElement('span');
     confBadge.className = `conf-badge conf-${candidate.confidence.toLowerCase()}`;
-    confBadge.textContent = `${candidate.confidence.toUpperCase()} MATCH`;
+    confBadge.textContent = isSsr
+      ? `${candidate.confidence.toUpperCase()} HYDRATION MATCH`
+      : `${candidate.confidence.toUpperCase()} MATCH`;
 
     const reasonBadge = document.createElement('span');
     reasonBadge.className = 'conf-reason';
@@ -2942,7 +3006,7 @@
     apiBox.className = 'reveal-val-box';
     const apiTitle = document.createElement('div');
     apiTitle.className = 'reveal-label';
-    apiTitle.textContent = 'API VALUE';
+    apiTitle.textContent = isSsr ? 'HYDRATION VALUE' : 'API VALUE';
     const apiVal = document.createElement('div');
     apiVal.className = 'reveal-val-text';
     apiVal.textContent = candidate.apiValue != null ? String(candidate.apiValue) : '(null)';
@@ -2973,11 +3037,10 @@
     flowApi.className = 'flow-step flow-api';
     const flowApiTag = document.createElement('div');
     flowApiTag.className = 'flow-tag';
-    flowApiTag.textContent = 'API SOURCE';
+    flowApiTag.textContent = isSsr ? 'SSR HYDRATION' : 'API SOURCE';
     const flowApiVal = document.createElement('div');
     flowApiVal.className = 'flow-val';
-    flowApiVal.textContent = candidate.apiValue != nu
-    ll ? String(candidate.apiValue) : '(null)';
+    flowApiVal.textContent = candidate.apiValue != null ? String(candidate.apiValue) : '(null)';
     flowApi.append(flowApiTag, flowApiVal);
     if (candidate.jsonPath) {
       const flowPath = document.createElement('div');
@@ -2993,24 +3056,26 @@
     const actions = document.createElement('div');
     actions.className = 'reveal-actions';
 
-    const viewReqBtn = document.createElement('button');
-    viewReqBtn.type = 'button';
-    viewReqBtn.className = 'mini-btn';
-    viewReqBtn.textContent = 'View in Request List';
-    viewReqBtn.addEventListener('click', () => {
-      jumpToEntry(candidate.entry);
-    });
-    actions.appendChild(viewReqBtn);
+    if (!isSsr) {
+      const viewReqBtn = document.createElement('button');
+      viewReqBtn.type = 'button';
+      viewReqBtn.className = 'mini-btn';
+      viewReqBtn.textContent = 'View in Request List';
+      viewReqBtn.addEventListener('click', () => {
+        jumpToEntry(candidate.entry);
+      });
+      actions.appendChild(viewReqBtn);
+    }
 
     if (candidate.entry && candidate.entry.responseBody) {
       const copyResBtn = document.createElement('button');
       copyResBtn.type = 'button';
       copyResBtn.className = 'mini-btn';
-      copyResBtn.textContent = 'Copy Response';
+      copyResBtn.textContent = isSsr ? 'Copy SSR Payload' : 'Copy Response';
       copyResBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(candidate.entry.responseBody).then(() => {
           copyResBtn.textContent = 'Copied';
-          setTimeout(() => { copyResBtn.textContent = 'Copy Response'; }, 1000);
+          setTimeout(() => { copyResBtn.textContent = isSsr ? 'Copy SSR Payload' : 'Copy Response'; }, 1000);
         }).catch(() => {});
       });
       actions.appendChild(copyResBtn);
@@ -3029,7 +3094,8 @@
         const root = jsonNode(null, parsed, false, candidate.jsonPath, '');
         if (root.tagName === 'DETAILS') root.open = true;
         treeWrap.appendChild(root);
-        card.appendChild(buildInspectSection('Response Preview (field highlighted)', true, treeWrap));
+        const sectionTitle = isSsr ? 'Hydration State Preview (field highlighted)' : 'Response Preview (field highlighted)';
+        card.appendChild(buildInspectSection(sectionTitle, true, treeWrap));
 
         requestAnimationFrame(() => {
           const matchEl = treeWrap.querySelector('.j-match');
@@ -3046,8 +3112,9 @@
   }
 
   function renderContainerCard(group) {
+    const isSsr = group.sourceType === 'ssr' || (group.entry && group.entry.kind === 'ssr');
     const card = document.createElement('div');
-    card.className = 'reveal-card primary';
+    card.className = isSsr ? 'reveal-card primary ssr-card' : 'reveal-card primary';
 
     const head = document.createElement('div');
     head.className = 'reveal-card-head';
@@ -3058,8 +3125,13 @@
     method.textContent = group.method;
 
     const status = document.createElement('span');
-    status.className = `status ${statusClass(group.entry)}`;
-    status.textContent = group.status ? String(group.status) : '';
+    if (isSsr) {
+      status.className = 'status status-ssr';
+      status.textContent = 'HYDRATION';
+    } else {
+      status.className = `status ${statusClass(group.entry)}`;
+      status.textContent = group.status ? String(group.status) : '';
+    }
 
     const urlSpan = document.createElement('span');
     urlSpan.className = 'path reveal-url';
@@ -3067,7 +3139,7 @@
     urlSpan.title = group.url;
 
     head.append(method, status, urlSpan);
-    addCopyButton(head, group.url, 'Copy URL');
+    addCopyButton(head, group.url, isSsr ? 'Copy source name' : 'Copy URL');
     card.appendChild(head);
 
     const metaRow = document.createElement('div');
@@ -3075,7 +3147,9 @@
 
     const confBadge = document.createElement('span');
     confBadge.className = `conf-badge conf-${group.confidence.toLowerCase()}`;
-    confBadge.textContent = `${group.confidence.toUpperCase()} MATCH (${group.matchCount} field${group.matchCount > 1 ? 's' : ''})`;
+    confBadge.textContent = isSsr
+      ? `${group.confidence.toUpperCase()} HYDRATION MATCH (${group.matchCount} field${group.matchCount > 1 ? 's' : ''})`
+      : `${group.confidence.toUpperCase()} MATCH (${group.matchCount} field${group.matchCount > 1 ? 's' : ''})`;
     metaRow.appendChild(confBadge);
     card.appendChild(metaRow);
 
@@ -3111,24 +3185,26 @@
     const actions = document.createElement('div');
     actions.className = 'reveal-actions';
 
-    const viewReqBtn = document.createElement('button');
-    viewReqBtn.type = 'button';
-    viewReqBtn.className = 'mini-btn';
-    viewReqBtn.textContent = 'View in Request List';
-    viewReqBtn.addEventListener('click', () => {
-      jumpToEntry(group.entry);
-    });
-    actions.appendChild(viewReqBtn);
+    if (!isSsr) {
+      const viewReqBtn = document.createElement('button');
+      viewReqBtn.type = 'button';
+      viewReqBtn.className = 'mini-btn';
+      viewReqBtn.textContent = 'View in Request List';
+      viewReqBtn.addEventListener('click', () => {
+        jumpToEntry(group.entry);
+      });
+      actions.appendChild(viewReqBtn);
+    }
 
     if (group.entry && group.entry.responseBody) {
       const copyResBtn = document.createElement('button');
       copyResBtn.type = 'button';
       copyResBtn.className = 'mini-btn';
-      copyResBtn.textContent = 'Copy Response';
+      copyResBtn.textContent = isSsr ? 'Copy SSR Payload' : 'Copy Response';
       copyResBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(group.entry.responseBody).then(() => {
           copyResBtn.textContent = 'Copied';
-          setTimeout(() => { copyResBtn.textContent = 'Copy Response'; }, 1000);
+          setTimeout(() => { copyResBtn.textContent = isSsr ? 'Copy SSR Payload' : 'Copy Response'; }, 1000);
         }).catch(() => {});
       });
       actions.appendChild(copyResBtn);
@@ -3162,20 +3238,23 @@
 
     if (result.isContainer) {
       if (result.contributingRequests && result.contributingRequests.length > 0) {
+        const hasSsr = result.contributingRequests.some(r => r.sourceType === 'ssr');
         const banner = document.createElement('div');
-        banner.className = 'reveal-container-banner';
-        banner.textContent = `${result.contributingRequests.length} API request${result.contributingRequests.length > 1 ? 's' : ''} contributed ${result.totalFieldsMatched} field${result.totalFieldsMatched > 1 ? 's' : ''} to this element`;
+        banner.className = hasSsr ? 'reveal-container-banner ssr-banner' : 'reveal-container-banner';
+        const sourceWord = hasSsr ? 'source' : 'API request';
+        banner.textContent = `${result.contributingRequests.length} ${sourceWord}${result.contributingRequests.length > 1 ? 's' : ''} contributed ${result.totalFieldsMatched} field${result.totalFieldsMatched > 1 ? 's' : ''} to this element`;
         revealBodyEl.appendChild(banner);
 
         for (const grp of result.contributingRequests) {
           revealBodyEl.appendChild(renderContainerCard(grp));
         }
       } else {
+        const isSsrFallback = result.fallback && result.fallback.includes('Server-rendered');
         const emptyBox = document.createElement('div');
-        emptyBox.className = 'reveal-empty-box';
+        emptyBox.className = isSsrFallback ? 'reveal-empty-box reveal-empty-ssr' : 'reveal-empty-box';
         const title = document.createElement('div');
         title.className = 'reveal-empty-title';
-        title.textContent = 'No matching network sources found';
+        title.textContent = isSsrFallback ? 'Server-rendered Container' : 'No matching network sources found';
         emptyBox.appendChild(title);
         const msg = document.createElement('pre');
         msg.className = 'reveal-empty-desc';
@@ -3200,12 +3279,13 @@
         revealBodyEl.appendChild(buildInspectSection(`Other potential matches (${candidates.length - 1})`, false, altWrap));
       }
     } else {
+      const isSsrFallback = fallback && fallback.includes('Server-rendered');
       const emptyBox = document.createElement('div');
-      emptyBox.className = 'reveal-empty-box';
+      emptyBox.className = isSsrFallback ? 'reveal-empty-box reveal-empty-ssr' : 'reveal-empty-box';
 
       const title = document.createElement('div');
       title.className = 'reveal-empty-title';
-      title.textContent = 'No matching network source found';
+      title.textContent = isSsrFallback ? 'Server-rendered Document' : 'No matching network source found';
       emptyBox.appendChild(title);
 
       const msg = document.createElement('pre');
@@ -3355,6 +3435,7 @@
         renderStateRules(msg);
       } else if (msg.type === 'netlens:inspect:result') {
         setPicking(false);
+        if (inspectPanel.hidden) openSlidePanel(inspectPanel);
         renderInspectResult(msg.data);
       } else if (msg.type === 'netlens:inspect:cancelled') {
         setPicking(false);
@@ -3364,6 +3445,20 @@
       }
     });
   }
+
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+    if (typeof matchesShortcut === 'function') {
+      if (matchesShortcut(e, shortcutSettings.reveal) && revealBtn) {
+        e.preventDefault();
+        revealBtn.click();
+      } else if (matchesShortcut(e, shortcutSettings.inspect) && inspectBtn) {
+        e.preventDefault();
+        inspectBtn.click();
+      }
+    }
+  });
 
   // ------------------------------------------------ custom decoder manager
   const decodersBtn = document.getElementById('openDecodersBtn');

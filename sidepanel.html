@@ -246,6 +246,28 @@
         <button type="button" class="set-info" tabindex="0" title="Shows the first ~120 characters of the response body right in the collapsed toast, flattened to one line. Click the toast for the full, pretty-printed body regardless of this setting.">i</button>
       </label>
 
+      <div class="set-divider"></div>
+
+      <div class="set-group set-shortcuts">
+        <div class="set-label-row">
+          <div class="set-label">Keyboard Shortcuts</div>
+          <button type="button" class="set-info" tabindex="0" title="Shortcuts allow picking elements directly on the active webpage or side panel. Choose your preferred key combination or open Chrome shortcuts.">i</button>
+        </div>
+        <div class="set-grid">
+          <label class="set-field">
+            <span>Reveal API</span>
+            <select id="setShortcutReveal"></select>
+          </label>
+          <label class="set-field">
+            <span>Inspect CSS</span>
+            <select id="setShortcutInspect"></select>
+          </label>
+        </div>
+        <div class="set-shortcut-chrome-row">
+          <button type="button" id="openShortcutsBtn" class="mini-btn" title="Open Chrome extension shortcuts settings">Configure Chrome global shortcuts &rarr;</button>
+        </div>
+      </div>
+
       <div class="set-actions">
         <button type="button" id="setTestToast" class="mini-btn" title="Preview a toast on the page right now, whatever the filters say">Send test toast</button>
         <button type="button" id="setReset" class="mini-btn">Reset to defaults</button>
