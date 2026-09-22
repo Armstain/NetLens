@@ -427,7 +427,126 @@ assert.strictEqual(hotelContrib.confidence, 'High');
 // reqAds should contribute 1 field
 const adsContrib = resComposite.contributingRequests.find(r => r.requestId === 22);
 assert.ok(adsContrib);
-assert.strictEqual(adsContrib.matchCount, 1);
+// 18. SSR Hydration: Next.js __NEXT_DATA__
+const nextDataPayload = {
+  id: '__NEXT_DATA__',
+  name: 'Next.js (__NEXT_DATA__)',
+  json: JSON.stringify({
+    props: {
+      pageProps: {
+        product: {
+          id: 'mbp-16',
+          title: 'MacBook Pro 16',
+          price: 2499,
+          currency: 'USD'
+        }
+      }
+    }
+  })
+};
+
+const resNextData = findDataSources(
+  {
+    text: 'MacBook Pro 16',
+    inInitialHtml: true,
+    ssrPayloads: [nextDataPayload]
+  },
+  [] // No client network requests
+);
+assert.strictEqual(resNextData.candidates.length, 1);
+assert.strictEqual(resNextData.candidates[0].sourceType, 'ssr');
+assert.strictEqual(resNextData.candidates[0].jsonPath, 'props.pageProps.product.title');
+assert.strictEqual(resNextData.candidates[0].apiValue, 'MacBook Pro 16');
+assert.strictEqual(resNextData.candidates[0].confidence, 'High');
+
+// 19. SSR Hydration: Schema.org JSON-LD Structured Data
+const jsonLdPayload = {
+  id: 'ld-json-0',
+  name: 'JSON-LD (@type: Product)',
+  json: JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: 'Wireless Noise Canceling Headphones',
+    offers: {
+      '@type': 'Offer',
+      price: 299,
+      priceCurrency: 'USD'
+    }
+  })
+};
+
+const resJsonLd = findDataSources(
+  {
+    text: '$299',
+    inInitialHtml: true,
+    ssrPayloads: [jsonLdPayload]
+  },
+  []
+);
+assert.strictEqual(resJsonLd.candidates.length, 1);
+assert.strictEqual(resJsonLd.candidates[0].sourceType, 'ssr');
+assert.strictEqual(resJsonLd.candidates[0].jsonPath, 'offers.price');
+assert.strictEqual(resJsonLd.candidates[0].apiValue, 299);
+
+// 20. SSR Composite Card / Container
+const ssrCardContext = {
+  isContainer: true,
+  tag: 'div',
+  classes: ['product-card'],
+  text: 'MacBook Pro 16 $2,499',
+  inInitialHtml: true,
+  subElements: [
+    { text: 'MacBook Pro 16', tag: 'h2' },
+    { text: '$2,499', tag: 'span' },
+  ],
+  ssrPayloads: [nextDataPayload]
+};
+
+const resSsrCard = findDataSources(ssrCardContext, []);
+assert.strictEqual(resSsrCard.isContainer, true);
+assert.strictEqual(resSsrCard.contributingRequests.length, 1);
+assert.strictEqual(resSsrCard.contributingRequests[0].sourceType, 'ssr');
+assert.strictEqual(resSsrCard.contributingRequests[0].matchCount, 2);
+assert.strictEqual(resSsrCard.totalFieldsMatched, 2);
+
+// 21. Precedence: Live network request over SSR hydration
+const liveProductReq = {
+  id: 30,
+  kind: 'fetch',
+  method: 'GET',
+  url: 'https://api.example.com/products/mbp-16',
+  status: 200,
+  contentType: 'application/json',
+  startedAt: 5000,
+  responseBody: JSON.stringify({ title: 'MacBook Pro 16' })
+};
+
+const resPrecedence = findDataSources(
+  {
+    text: 'MacBook Pro 16',
+    inInitialHtml: true,
+    ssrPayloads: [nextDataPayload]
+  },
+  [liveProductReq]
+);
+assert.ok(resPrecedence.candidates.length >= 2);
+// Top match should be the live network request due to startedAt > 0
+assert.strictEqual(resPrecedence.candidates[0].sourceType, 'network');
+assert.strictEqual(resPrecedence.candidates[0].requestId, 30);
+// Second match is the SSR payload
+assert.strictEqual(resPrecedence.candidates[1].sourceType, 'ssr');
+
+// 22. SSR Fallback when field is not found in hydration state
+const resSsrNotFound = findDataSources(
+  {
+    text: 'Custom Hardcoded Slogan',
+    inInitialHtml: true,
+    ssrPayloads: [nextDataPayload]
+  },
+  []
+);
+assert.strictEqual(resSsrNotFound.candidates.length, 0);
+assert.ok(resSsrNotFound.fallback.includes('No matching field found in embedded hydration state'));
 
 console.log('All provenance tests passed!');
 

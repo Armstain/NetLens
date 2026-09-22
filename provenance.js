@@ -185,23 +185,41 @@ function findContainerDataSources(context, entries, options = {}) {
     contributingRequests,
     totalFieldsMatched: contributingRequests.reduce((sum, r) => sum + r.matchCount, 0),
     fallback: contributingRequests.length === 0
-      ? 'No network requests matched any fields inside this container element.'
+      ? (context.inInitialHtml
+          ? 'Source: Server-rendered / initial document\nNo matching fields found in hydration state.'
+          : 'No network requests or hydration data matched any fields inside this container element.')
       : null,
   };
 }
 
 function findDataSources(context, entries, options = {}) {
-  if (!context || !entries || !entries.length) {
+  const ssr = context && context.ssrPayloads;
+  const allEntries = (!ssr || !ssr.length) ? (entries || []) : (entries || []).concat(
+    ssr.filter(s => s && s.json).map((s, i) => ({
+      id: s.id || `ssr-${i}`,
+      kind: 'ssr',
+      method: 'SSR',
+      url: s.name || 'Server Hydration State',
+      status: 200,
+      contentType: 'application/json',
+      startedAt: 0,
+      responseBody: s.json,
+    }))
+  );
+
+  if (!context || !allEntries.length) {
     return {
       candidates: [],
       fallback: context && context.inInitialHtml
-        ? 'Source: Server-rendered / initial document'
+        ? (ssr && ssr.length
+            ? 'Source: Server-rendered / initial document\nNo matching field found in embedded hydration state.'
+            : 'Source: Server-rendered / initial document')
         : 'No matching network source found.\nPossible source:\n- server-rendered HTML\n- localStorage / sessionStorage\n- hardcoded/static data\n- transformed/generated value',
     };
   }
 
   if (context.isContainer && Array.isArray(context.subElements) && context.subElements.length > 1) {
-    return findContainerDataSources(context, entries, options);
+    return findContainerDataSources(context, allEntries, options);
   }
 
   const targetText = typeof context.text === 'string' ? context.text.trim() : '';
@@ -217,7 +235,7 @@ function findDataSources(context, entries, options = {}) {
   const candidates = [];
   const maxCandidates = options.maxCandidates || 20;
 
-  for (const item of entries) {
+  for (const item of allEntries) {
     const entry = (item && item.data && typeof item.data === 'object' && !item.kind) ? item.data : item;
     if (!entry) continue;
 
@@ -240,8 +258,10 @@ function findDataSources(context, entries, options = {}) {
           confidence: 'Low',
           confidenceScore: 40,
           matchReason: 'exact-value',
-          matchDetails: 'Found inside plain-text / non-JSON response body',
-          sourceType: entry.kind === 'wsframe' ? 'websocket' : 'network',
+          matchDetails: entry.kind === 'ssr'
+            ? `Found in plain-text SSR content (${entry.url})`
+            : 'Found inside plain-text / non-JSON response body',
+          sourceType: entry.kind === 'ssr' ? 'ssr' : (entry.kind === 'wsframe' ? 'websocket' : 'network'),
         });
       }
       continue;
@@ -366,8 +386,10 @@ function findDataSources(context, entries, options = {}) {
           confidence,
           confidenceScore: score,
           matchReason: reason,
-          matchDetails: details,
-          sourceType: entry.kind === 'wsframe' ? 'websocket' : 'network',
+          matchDetails: entry.kind === 'ssr'
+            ? `${details} · Hydration state (${entry.url})`
+            : details,
+          sourceType: entry.kind === 'ssr' ? 'ssr' : (entry.kind === 'wsframe' ? 'websocket' : 'network'),
         });
       }
     }
@@ -397,8 +419,10 @@ function findDataSources(context, entries, options = {}) {
                 confidence: 'High',
                 confidenceScore: 88,
                 matchReason: 'combined-fields',
-                matchDetails: `Combined fields from ${parentPath || 'root'}`,
-                sourceType: entry.kind === 'wsframe' ? 'websocket' : 'network',
+                matchDetails: entry.kind === 'ssr'
+                  ? `Constructed from adjacent hydration fields (${entry.url})`
+                  : `Combined fields from ${parentPath || 'root'}`,
+                sourceType: entry.kind === 'ssr' ? 'ssr' : 'network',
               });
             }
           }
@@ -451,8 +475,10 @@ function findDataSources(context, entries, options = {}) {
               confidence: 'Medium',
               confidenceScore: 65,
               matchReason: 'container-entity',
-              matchDetails: `Matched via card entity "${matchedPrim.value}". Displayed value is likely calculated or marked up from this field.`,
-              sourceType: entry.kind === 'wsframe' ? 'websocket' : 'network',
+              matchDetails: entry.kind === 'ssr'
+                ? `Matched via card entity "${matchedPrim.value}" in hydration state (${entry.url}). Displayed value is likely calculated or marked up from this field.`
+                : `Matched via card entity "${matchedPrim.value}". Displayed value is likely calculated or marked up from this field.`,
+              sourceType: entry.kind === 'ssr' ? 'ssr' : (entry.kind === 'wsframe' ? 'websocket' : 'network'),
             });
             break;
           }
@@ -480,7 +506,9 @@ function findDataSources(context, entries, options = {}) {
     candidates: sorted,
     fallback: sorted.length === 0
       ? (context.inInitialHtml
-          ? 'Source: Server-rendered / initial document'
+          ? (ssr && ssr.length
+              ? 'Source: Server-rendered / initial document\nNo matching field found in embedded hydration state.'
+              : 'Source: Server-rendered / initial document')
           : 'No matching network source found.\nPossible source:\n- server-rendered HTML\n- localStorage / sessionStorage\n- hardcoded/static data\n- transformed/generated value')
       : null,
   };
