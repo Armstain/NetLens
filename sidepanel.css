@@ -106,7 +106,8 @@ body { display: flex; flex-direction: column; }
 .filterbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -115,59 +116,75 @@ body { display: flex; flex-direction: column; }
 #filter, #fullscreenSearch {
   flex: 1;
   min-width: 0;
+  height: 28px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   color: var(--text);
   font-family: var(--mono);
   font-size: 12px;
-  padding: 5px 9px;
+  padding: 0 9px;
   transition: border-color 120ms ease;
 }
 #filter::placeholder, #fullscreenSearch::placeholder { color: var(--faint); }
 #filter:focus, #fullscreenSearch:focus { outline: none; border-color: var(--indigo); }
-
-.errors-toggle {
-  display: flex;
+.scope-group {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  transition: color 120ms ease;
+  height: 28px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 2px;
+  flex-shrink: 0;
 }
-.errors-toggle:hover { color: var(--text); }
-.errors-toggle input {
-  appearance: none;
+.scope-btn {
+  height: 100%;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
+  transition: color 100ms ease, background-color 100ms ease;
+  line-height: 1;
+}
+.scope-btn:hover {
+  color: var(--text);
+}
+.scope-btn.active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.scope-btn[data-scope="api"].active {
+  color: var(--emerald);
+}
+.scope-btn[data-scope="console"].active {
+  color: #a78bfa;
+}
+
+.filter-level-select {
+  height: 28px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
   background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0 6px;
   cursor: pointer;
-  flex-shrink: 0;
-  transition: background-color 120ms ease, border-color 120ms ease;
 }
-.errors-toggle input:hover { border-color: var(--faint); }
-.errors-toggle input:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
-.errors-toggle input:checked { background: var(--red); border-color: var(--red); }
-.errors-toggle input:checked::before {
-  content: "";
-  width: 3px;
-  height: 6px;
-  margin-top: -2px;
-  border: solid var(--bg);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+.filter-level-select:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 1px;
 }
-.api-toggle input:checked { background: var(--emerald); border-color: var(--emerald); }
-.log-toggle input:checked { background: var(--indigo); border-color: var(--indigo); }
 
 /* ------------------------------------------------------------------ list */
 .list {
@@ -185,6 +202,9 @@ body { display: flex; flex-direction: column; }
 .row.s4xx, .row.s5xx, .row.failed { border-left-color: var(--red); }
 .row.log-warn { border-left-color: var(--amber); }
 .row.log-error { border-left-color: var(--red); }
+.row.log-info { border-left-color: #60a5fa; }
+.row.log-log { border-left-color: #94a3b8; }
+.row.log-debug { border-left-color: #64748b; }
 
 .row-head {
   display: flex;
@@ -246,6 +266,9 @@ body { display: flex; flex-direction: column; }
 
 .log-level-error { color: var(--red); }
 .log-level-warn { color: var(--amber); }
+.log-level-info { color: #60a5fa; }
+.log-level-log { color: #94a3b8; }
+.log-level-debug { color: #64748b; }
 .log-row .path { direction: ltr; text-align: left; }
 .log-detail-inner { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .log-stack { color: var(--muted); font-size: 11px; }

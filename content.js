@@ -33,14 +33,21 @@
   let shortcutSettings = typeof normalizeShortcuts === 'function'
     ? normalizeShortcuts(null)
     : { reveal: 'Alt+Shift+R', inspect: 'Alt+Shift+C' };
+  function syncLogConfig(captureAllLogs) {
+    try { window.postMessage({ __netlens_config: true, captureAllLogs }, '*'); } catch {}
+  }
+
   try {
-    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts'], (res) => {
+    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts', 'netlensCaptureAllLogs'], (res) => {
       if (res && res.netlensToastSettings) {
         toastSettings = normalizeToastSettings(res.netlensToastSettings);
         applyToastPosition();
       }
       if (res && res.netlensShortcuts) {
         shortcutSettings = normalizeShortcuts(res.netlensShortcuts);
+      }
+      if (res && res.netlensCaptureAllLogs !== undefined) {
+        syncLogConfig(Boolean(res.netlensCaptureAllLogs));
       }
     });
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -52,6 +59,9 @@
       }
       if (changes.netlensShortcuts) {
         shortcutSettings = normalizeShortcuts(changes.netlensShortcuts.newValue);
+      }
+      if (changes.netlensCaptureAllLogs) {
+        syncLogConfig(Boolean(changes.netlensCaptureAllLogs.newValue));
       }
     });
   } catch {}
@@ -636,11 +646,6 @@
     if (initialHtmlSnapshot || !document.documentElement) return;
     try { initialHtmlSnapshot = document.documentElement.innerHTML.slice(0, 500000); } catch {}
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', captureInitialHtml, { once: true });
-  } else {
-    captureInitialHtml();
-  }
 
   function extractElementContext(el) {
     if (!el) return null;
@@ -1122,9 +1127,13 @@
     }
     stopPicker();
     try {
-      chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, () => {
-        if (chrome.runtime.lastError) {
-          try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+      chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, (res) => {
+        if (chrome.runtime.lastError || !res || !res.ok) {
+          try {
+            chrome.storage.local.set({ netlensPendingAction: { type: 'inspect', data } }, () => {
+              try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+            });
+          } catch {}
         }
       });
     } catch {}
@@ -1146,9 +1155,13 @@
       stopPicker();
       if (context) {
         try {
-          chrome.runtime.sendMessage({ type: 'netlens:reveal:result', context }, () => {
-            if (chrome.runtime.lastError) {
-              try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+          chrome.runtime.sendMessage({ type: 'netlens:reveal:result', context }, (res) => {
+            if (chrome.runtime.lastError || !res || !res.ok) {
+              try {
+                chrome.storage.local.set({ netlensPendingAction: { type: 'reveal', context } }, () => {
+                  try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
+                });
+              } catch {}
             }
           });
         } catch {}

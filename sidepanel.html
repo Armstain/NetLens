@@ -28,19 +28,20 @@
   </header>
 
   <div class="filterbar">
-    <input id="filter" type="text" placeholder="Filter by URL or method, or /regex/…" autocomplete="off" spellcheck="false" />
-    <label class="errors-toggle">
-      <input type="checkbox" id="errorsOnly" />
-      <span>Errors only</span>
-    </label>
-    <label class="errors-toggle api-toggle" title="Only show JSON/XML API responses">
-      <input type="checkbox" id="apiOnly" />
-      <span>API only</span>
-    </label>
-    <label class="errors-toggle log-toggle" title="Show console.error/warn and uncaught exceptions">
-      <input type="checkbox" id="showLogs" />
-      <span>Console logs</span>
-    </label>
+    <input id="filter" type="text" placeholder="Filter by URL, method, message, or /regex/…" autocomplete="off" spellcheck="false" />
+    <div class="scope-group" role="tablist" aria-label="Filter scope">
+      <button type="button" class="scope-btn active" data-scope="all">All</button>
+      <button type="button" class="scope-btn" data-scope="api">API</button>
+      <button type="button" class="scope-btn" data-scope="console">Console</button>
+    </div>
+    <select id="logLevelFilter" class="filter-level-select" title="Filter console logs by type" hidden>
+      <option value="all">All</option>
+      <option value="error">Errors</option>
+      <option value="warn">Warn</option>
+      <option value="info">Info</option>
+      <option value="log">Log</option>
+      <option value="debug">Debug</option>
+    </select>
   </div>
 
   <div id="revealPanel" class="decoder-panel" hidden>
@@ -145,6 +146,17 @@
         <div class="set-row">
           <button type="button" id="openDecodersBtn" class="mini-btn">Manage custom decoders…</button>
         </div>
+      </div>
+
+      <div class="set-group">
+        <div class="set-label-row">
+          <div class="set-label">Console logs</div>
+          <button type="button" class="set-info" tabindex="0" title="NetLens intercepts console logs on the page. Turn this on to record console.log, console.info, and console.debug in addition to errors and warnings.">i</button>
+        </div>
+        <label class="set-row">
+          <input type="checkbox" id="setCaptureAllLogs" />
+          <span>Capture all log types <span class="set-hint-inline">log, info, debug, warn, error</span></span>
+        </label>
       </div>
 
       <label class="set-row set-master">

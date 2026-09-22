@@ -142,19 +142,38 @@
     }, extra));
   }
 
-  const origConsoleError = console.error;
-  console.error = function (...args) {
-    try { origConsoleError.apply(console, args); } finally {
-      try { enqueueLog('error', args); } catch {}
-    }
-  };
+  let captureAllLogs = true;
+  try {
+    const saved = localStorage.getItem('__netlens_capture_all_logs');
+    if (saved !== null) captureAllLogs = saved === 'true';
+  } catch {}
 
-  const origConsoleWarn = console.warn;
-  console.warn = function (...args) {
-    try { origConsoleWarn.apply(console, args); } finally {
-      try { enqueueLog('warn', args); } catch {}
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || !event.data) return;
+    if (event.data.__netlens_config && event.data.captureAllLogs !== undefined) {
+      captureAllLogs = Boolean(event.data.captureAllLogs);
+      try { localStorage.setItem('__netlens_capture_all_logs', String(captureAllLogs)); } catch {}
     }
-  };
+  });
+
+  const LOG_METHODS = [
+    ['error', console.error],
+    ['warn', console.warn],
+    ['info', console.info],
+    ['log', console.log],
+    ['debug', console.debug],
+  ];
+
+  for (const [level, orig] of LOG_METHODS) {
+    if (typeof orig !== 'function') continue;
+    console[level] = function (...args) {
+      try { orig.apply(console, args); } finally {
+        if (captureAllLogs || level === 'error' || level === 'warn') {
+          try { enqueueLog(level, args); } catch {}
+        }
+      }
+    };
+  }
 
   window.addEventListener('error', (e) => {
     try {

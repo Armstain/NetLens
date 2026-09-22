@@ -10,15 +10,16 @@
   const countEl = document.getElementById('count');
   const pulseEl = document.getElementById('pulse');
   const filterEl = document.getElementById('filter');
-  const errorsOnlyEl = document.getElementById('errorsOnly');
-  const apiOnlyEl = document.getElementById('apiOnly');
-  const showLogsEl = document.getElementById('showLogs');
+  const scopeBtns = Array.from(document.querySelectorAll('.scope-btn'));
+  const logLevelFilterEl = document.getElementById('logLevelFilter');
+  let currentScope = 'all';
   const pauseBtn = document.getElementById('pauseBtn');
   const clearBtn = document.getElementById('clearBtn');
 
   let currentTabId = null;
   let currentTabUrl = '';
   let entries = [];
+  let currentRevealContext = null;
   const restoredIds = new Set();
   const socketRows = new Map();           
   let sessions = [];
@@ -417,6 +418,18 @@
     });
   }
 
+  const captureAllLogsEl = document.getElementById('setCaptureAllLogs');
+  if (captureAllLogsEl) {
+    try {
+      chrome.storage.local.get(['netlensCaptureAllLogs'], (res) => {
+        captureAllLogsEl.checked = res && res.netlensCaptureAllLogs !== undefined ? !!res.netlensCaptureAllLogs : true;
+      });
+    } catch {}
+    captureAllLogsEl.addEventListener('change', () => {
+      chrome.storage.local.set({ netlensCaptureAllLogs: captureAllLogsEl.checked });
+    });
+  }
+
   setEls.enabled.addEventListener('change', () => saveSettings({ enabled: setEls.enabled.checked }));
   setEls.gqlMutationsOnly.addEventListener('change', () => saveSettings({ gqlMutationsOnly: setEls.gqlMutationsOnly.checked }));
   setEls.dedupe.addEventListener('change', () => saveSettings({ dedupe: setEls.dedupe.checked }));
@@ -463,6 +476,10 @@
     toastSettings = normalizeToastSettings(null);
     saveSettings({});
     saveShortcuts(normalizeShortcuts(null));
+    if (captureAllLogsEl) {
+      captureAllLogsEl.checked = true;
+      chrome.storage.local.set({ netlensCaptureAllLogs: true });
+    }
   });
 
   document.getElementById('setTestToast').addEventListener('click', () => {
@@ -1067,12 +1084,22 @@
     });
   }
 
+  const LOG_LEVEL_LABELS = {
+    error: 'ERR',
+    warn: 'WARN',
+    info: 'INFO',
+    log: 'LOG',
+    debug: 'DBG',
+  };
+
   function buildLogRow(d) {
     const row = document.createElement('div');
     row.className = `row log-row log-${d.level}`;
     row.dataset.hay = (d.message || '').toLowerCase();
     row.dataset.err = d.level === 'error' ? '1' : '0';
     row.dataset.api = '0';
+    row.dataset.kind = 'log';
+    row.dataset.level = d.level || 'log';
 
     const head = document.createElement('div');
     head.className = 'row-head';
@@ -1082,7 +1109,7 @@
 
     const level = document.createElement('span');
     level.className = `method log-level-${d.level}`;
-    level.textContent = d.level === 'error' ? 'ERR' : 'WARN';
+    level.textContent = LOG_LEVEL_LABELS[d.level] || (d.level || 'LOG').toUpperCase();
 
     const msg = document.createElement('span');
     msg.className = 'path';
@@ -1816,16 +1843,32 @@
     const qRaw = filterEl.value.trim();
     const q = qRaw.toLowerCase();
     const test = qRaw ? buildUrlTest(qRaw) : null;
-    const errOnly = errorsOnlyEl.checked;
-    const apiOnly = apiOnlyEl.checked;
-    const showLogs = showLogsEl.checked;
+    const logLevel = logLevelFilterEl ? logLevelFilterEl.value : 'all';
+
+    if (logLevelFilterEl) {
+      logLevelFilterEl.hidden = currentScope !== 'console';
+    }
+
     let visibleCount = 0;
     for (const { data, el } of entries) {
+      const isEntryLog = data.kind === 'log';
       const matchesText =
         !test || test(el.dataset.hay) || test(bodyHay(data));
-      const matches =
-        matchesText && (!errOnly || el.dataset.err === '1') && (!apiOnly || el.dataset.api === '1') &&
-        (showLogs || data.kind !== 'log');
+
+      let matchesScope = true;
+      if (currentScope === 'api') {
+        matchesScope = !isEntryLog && el.dataset.api === '1';
+      } else if (currentScope === 'console') {
+        matchesScope = isEntryLog;
+      }
+
+      let matchesLevel = true;
+      if (isEntryLog && currentScope === 'console' && logLevel !== 'all') {
+        matchesLevel = data.level === logLevel;
+      }
+
+      const matches = matchesText && matchesScope && matchesLevel;
+
       el.style.display = matches ? '' : 'none';
       if (matches) visibleCount++;
 
@@ -1868,27 +1911,47 @@
 
   filterEl.addEventListener('input', scheduleFilter);
 
+  function setScope(scope) {
+    currentScope = scope;
+    for (const btn of scopeBtns) {
+      btn.classList.toggle('active', btn.dataset.scope === scope);
+    }
+    if (logLevelFilterEl) {
+      logLevelFilterEl.hidden = currentScope !== 'console';
+    }
+    applyFilter();
+    saveFilterFlags();
+  }
+
+  for (const btn of scopeBtns) {
+    btn.addEventListener('click', () => setScope(btn.dataset.scope));
+  }
+
   // The query itself stays session-only — reusing yesterday's URL substring
   // on a different site would just hide everything.
   function saveFilterFlags() {
     chrome.storage.local.set({
-      netlensFilterFlags: { errorsOnly: errorsOnlyEl.checked, apiOnly: apiOnlyEl.checked, showLogs: showLogsEl.checked },
+      netlensFilterFlags: {
+        scope: currentScope,
+        logLevel: logLevelFilterEl ? logLevelFilterEl.value : 'all',
+      },
     });
   }
   try {
     chrome.storage.local.get(['netlensFilterFlags'], (res) => {
       const flags = res && res.netlensFilterFlags;
       if (!flags) return;
-      errorsOnlyEl.checked = !!flags.errorsOnly;
-      apiOnlyEl.checked = !!flags.apiOnly;
-      showLogsEl.checked = !!flags.showLogs;
+      if (flags.scope && ['all', 'api', 'console'].includes(flags.scope)) {
+        setScope(flags.scope);
+      }
+      if (logLevelFilterEl && flags.logLevel) logLevelFilterEl.value = flags.logLevel;
       applyFilter();
     });
   } catch {}
 
-  errorsOnlyEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
-  apiOnlyEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
-  showLogsEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
+  if (logLevelFilterEl) {
+    logLevelFilterEl.addEventListener('change', () => { applyFilter(); saveFilterFlags(); });
+  }
 
   // ------------------------------------------------------------- ingest
   function addEntries(batch) {
@@ -1943,6 +2006,9 @@
     if (pinned) {
       const lastEntry = currentSession.entries[currentSession.entries.length - 1];
       if (lastEntry) lastEntry.el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+    }
+    if (currentRevealContext && revealPanel && !revealPanel.hidden) {
+      renderRevealResult(currentRevealContext);
     }
   }
 
@@ -2020,6 +2086,7 @@
   function trackTab(tabId) {
     if (tabId == null || tabId === currentTabId) return;
     currentTabId = tabId;
+    currentRevealContext = null;
     clearAll(false);
     chrome.tabs.get(tabId, (tab) => {
       if (chrome.runtime.lastError || !tab) return;
@@ -2389,7 +2456,7 @@
     const isLogEntry = isLog(d);
     const tag = document.createElement('span');
     tag.className = isLogEntry ? `method log-level-${d.level}` : `method m-${(d.method || '').toLowerCase()}`;
-    tag.textContent = isLogEntry ? (d.level === 'error' ? 'ERR' : 'WARN') : d.method;
+    tag.textContent = isLogEntry ? (LOG_LEVEL_LABELS[d.level] || (d.level || 'LOG').toUpperCase()) : d.method;
 
     const label = document.createElement('span');
     label.className = 'diag-label';
@@ -3216,6 +3283,7 @@
 
   function renderRevealResult(context) {
     if (!revealBodyEl) return;
+    currentRevealContext = context;
     revealBodyEl.textContent = '';
 
     const header = document.createElement('div');
@@ -3344,7 +3412,7 @@
     };
 
     const openRevealPanel = () => { openSlidePanel(revealPanel); startRevealPicking(); };
-    const closeRevealPanel = () => { stopRevealPicking(); closeSlidePanel(revealPanel); };
+    const closeRevealPanel = () => { stopRevealPicking(); currentRevealContext = null; closeSlidePanel(revealPanel); };
     slidePanels.push({ el: revealPanel, close: closeRevealPanel });
 
     revealBtn.addEventListener('click', () => {
@@ -3356,14 +3424,19 @@
       if (e.key === 'Escape' && !revealPanel.hidden) stopRevealPicking();
     });
 
-    chrome.runtime.onMessage.addListener((msg, sender) => {
-      if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (!msg || !sender.tab) return;
+      if (currentTabId != null && sender.tab.id !== currentTabId) {
+        trackTab(sender.tab.id);
+      }
       if (msg.type === 'netlens:reveal:result') {
         setRevealPicking(false);
         if (revealPanel.hidden) openSlidePanel(revealPanel);
         renderRevealResult(msg.context);
+        sendResponse({ ok: true });
       } else if (msg.type === 'netlens:reveal:cancelled') {
         setRevealPicking(false);
+        sendResponse({ ok: true });
       }
     });
   }
@@ -3427,8 +3500,11 @@
       if (e.key === 'Escape' && !inspectPanel.hidden) stopPicking();
     });
 
-    chrome.runtime.onMessage.addListener((msg, sender) => {
-      if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (!msg || !sender.tab) return;
+      if (currentTabId != null && sender.tab.id !== currentTabId) {
+        trackTab(sender.tab.id);
+      }
       if (msg.type === 'netlens:inspect:hover') {
         renderInspectResult(msg.data);
       } else if (msg.type === 'netlens:inspect:states') {
@@ -3437,14 +3513,43 @@
         setPicking(false);
         if (inspectPanel.hidden) openSlidePanel(inspectPanel);
         renderInspectResult(msg.data);
+        sendResponse({ ok: true });
       } else if (msg.type === 'netlens:inspect:cancelled') {
         setPicking(false);
+        sendResponse({ ok: true });
       } else if (msg.type === 'netlens:inspect:error') {
         setPicking(false);
         showInspectError(`Inspect failed: ${msg.message}`);
+        sendResponse({ ok: true });
       }
     });
   }
+
+  function consumePendingAction(action) {
+    if (!action || !action.type) return;
+    chrome.storage.local.remove('netlensPendingAction');
+    if (action.type === 'reveal' && action.context) {
+      if (revealPanel && revealPanel.hidden) openSlidePanel(revealPanel);
+      if (typeof setRevealPicking === 'function') setRevealPicking(false);
+      renderRevealResult(action.context);
+    } else if (action.type === 'inspect' && action.data) {
+      if (inspectPanel && inspectPanel.hidden) openSlidePanel(inspectPanel);
+      if (typeof setPicking === 'function') setPicking(false);
+      renderInspectResult(action.data);
+    }
+  }
+
+  try {
+    chrome.storage.local.get(['netlensPendingAction'], (res) => {
+      if (res && res.netlensPendingAction) consumePendingAction(res.netlensPendingAction);
+    });
+  } catch {}
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.netlensPendingAction && changes.netlensPendingAction.newValue) {
+      consumePendingAction(changes.netlensPendingAction.newValue);
+    }
+  });
 
   window.addEventListener('keydown', (e) => {
     const tag = (e.target && e.target.tagName || '').toLowerCase();

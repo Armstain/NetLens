@@ -1,5 +1,14 @@
 # Changelog
 
+## 6.6
+
+- Streamlined filter bar: replaced cramped checkboxes with a clean segmented control (`All` | `API` | `Console`), giving the search input ample room to breathe.
+- Full console log interception: captures `console.log`, `console.info`, `console.debug`, `console.warn`, and `console.error` with color-coded tags (`LOG`, `INFO`, `DBG`, `WARN`, `ERR`).
+- Contextual log level filter: a clean dropdown appears when viewing the `Console` scope to quickly filter by `Errors`, `Warn`, `Info`, `Log`, or `Debug`.
+- Configurable log capture: added a setting in Settings to enable/disable capturing verbose console logs (`log`, `info`, `debug`) alongside errors and warnings.
+- Fixed Reveal API Source shortcut when side panel is closed: selecting an element via keyboard shortcut now seamlessly persists the target context and automatically opens the Reveal panel with matched data sources.
+- Performance optimization: made HTML snapshotting lazy, completely eliminating main-thread DOM serialization on `DOMContentLoaded` across all page loads.
+
 ## 6.5
 
 - Added "Reveal API Source" (crosshair icon): click any element on the page to trace exactly which API request or SSR hydration payload populated it. Computes path provenance (e.g. `data.products[0].price`), highlights matching values, and displays confidence rankings.

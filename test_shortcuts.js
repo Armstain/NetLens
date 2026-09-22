@@ -61,4 +61,32 @@ assert.strictEqual(
   true
 );
 
+// 3. Pending action storage lifecycle
+let mockStorage = {};
+const mockChromeStorage = {
+  local: {
+    get: (keys, cb) => cb({ netlensPendingAction: mockStorage.netlensPendingAction }),
+    set: (items, cb) => { Object.assign(mockStorage, items); if (cb) cb(); },
+    remove: (key, cb) => { delete mockStorage[key]; if (cb) cb(); },
+  },
+};
+
+let executedAction = null;
+function consumePendingAction(action) {
+  if (!action || !action.type) return;
+  mockChromeStorage.local.remove('netlensPendingAction');
+  executedAction = action;
+}
+
+const sampleContext = { tag: 'button', text: 'Submit', id: 'submit-btn', classes: ['btn'] };
+mockChromeStorage.local.set({ netlensPendingAction: { type: 'reveal', context: sampleContext } });
+assert.ok(mockStorage.netlensPendingAction);
+
+mockChromeStorage.local.get(['netlensPendingAction'], (res) => {
+  if (res && res.netlensPendingAction) consumePendingAction(res.netlensPendingAction);
+});
+assert.strictEqual(mockStorage.netlensPendingAction, undefined);
+assert.strictEqual(executedAction.type, 'reveal');
+assert.deepStrictEqual(executedAction.context, sampleContext);
+
 console.log('All shortcut tests passed!');
