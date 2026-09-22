@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NetLens",
-  "version": "6.4",
+  "version": "6.5",
   "description": "See your page's API calls — payloads, responses, headers — in a side panel. No DevTools required.",
   "permissions": ["sidePanel", "tabs", "storage", "cookies", "scripting"],
   "host_permissions": ["<all_urls>"],
@@ -26,6 +26,22 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "commands": {
+    "pick-reveal": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Pick element to reveal API source"
+    },
+    "pick-inspect": {
+      "suggested_key": {
+        "default": "Alt+Shift+C",
+        "mac": "Alt+Shift+C"
+      },
+      "description": "Pick element to inspect CSS"
+    }
   },
   "content_scripts": [
     {

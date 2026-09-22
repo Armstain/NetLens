@@ -1,5 +1,13 @@
 # Changelog
 
+## 6.5
+
+- Added "Reveal API Source" (crosshair icon): click any element on the page to trace exactly which API request or SSR hydration payload populated it. Computes path provenance (e.g. `data.products[0].price`), highlights matching values, and displays confidence rankings.
+- Added SSR / Hydration State Extraction & Provenance: automatically traces Next.js (`__NEXT_DATA__`, RSC flight chunks), Nuxt (`__NUXT_DATA__`), Remix (`__remixContext`), and Schema.org JSON-LD structured data when no client-side fetch is responsible for the rendered markup. SSR candidates feature distinct hydration badges, a "Copy SSR Payload" action, and interactive highlighted JSON trees.
+- Added customizable keyboard shortcuts: trigger element selection directly from the webpage (`Alt+Shift+R` for Reveal, `Alt+Shift+C` for CSS Inspect) or the side panel. Configurable via dropdown selectors in Settings or through Chrome's global shortcuts page (`chrome://extensions/shortcuts`).
+- In-page element pickers now toggle on/off cleanly with their respective shortcut and automatically open the side panel if it was closed when an element is locked.
+- Element Inspector now automatically reveals its slide-in panel upon selection even when navigating other sidepanel tabs.
+
 ## 6.4
 
 - Added request replay: edit a captured request's method, URL, headers and body, then resend it from the page's own context so it carries real cookies and origin. Results include a Diff tab showing exactly what changed, using a line diff that trims the shared prefix/suffix first, so a multi-megabyte body with one changed field still diffs instantly instead of bailing out.
