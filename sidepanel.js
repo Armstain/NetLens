@@ -749,7 +749,9 @@
 
 
   // --------------------------------------------------------- JSON tree UI
-  function jsonNode(key, value, forceOpen = false) {
+  function jsonNode(key, value, forceOpen = false, targetPath = null, currentPath = '') {
+    const path = currentPath;
+
     const isObj = value !== null && typeof value === 'object';
     if (isObj) {
       if (value.__decoded) {
@@ -772,14 +774,21 @@
         sum.appendChild(badge);
         det.appendChild(sum);
         
-        det.appendChild(jsonNode(null, value.value, forceOpen));
+        det.appendChild(jsonNode(null, value.value, forceOpen, targetPath, path));
         return det;
       }
 
       const isArr = Array.isArray(value);
       const keys = isArr ? value : Object.keys(value);
       const det = document.createElement('details');
-      if (forceOpen) det.open = true;
+
+      const shouldOpen = forceOpen || (targetPath && (
+        targetPath === path ||
+        targetPath.startsWith(path + '.') ||
+        targetPath.startsWith(path + '[')
+      ));
+      if (shouldOpen) det.open = true;
+
       const sum = document.createElement('summary');
 
       if (key !== null) {
@@ -795,12 +804,19 @@
       det.appendChild(sum);
 
       const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
-      for (const [k, v] of children) det.appendChild(jsonNode(String(k), v, forceOpen));
+      for (const [k, v] of children) {
+        const childPath = path ? (isArr ? `${path}[${k}]` : `${path}.${k}`) : (isArr ? `[${k}]` : String(k));
+        det.appendChild(jsonNode(String(k), v, forceOpen, targetPath, childPath));
+      }
       return det;
     }
 
     const div = document.createElement('div');
     div.className = 'leaf';
+    if (targetPath && (path === targetPath || targetPath.includes(path))) {
+      div.classList.add('j-match');
+    }
+
     if (key !== null) {
       const k = document.createElement('span');
       k.className = 'j-key';
@@ -2840,6 +2856,438 @@
     return details;
   }
 
+  // -------------------------------------------------- reveal API source
+  const revealBtn = document.getElementById('revealBtn');
+  const revealPanel = document.getElementById('revealPanel');
+  const revealPanelClose = document.getElementById('revealPanelClose');
+  const revealPickBtn = document.getElementById('revealPickBtn');
+  const revealBodyEl = document.getElementById('revealBody');
+
+  function renderCandidateCard(candidate, isPrimary) {
+    const card = document.createElement('div');
+    card.className = isPrimary ? 'reveal-card primary' : 'reveal-card alternate';
+
+    const head = document.createElement('div');
+    head.className = 'reveal-card-head';
+
+    const method = document.createElement('span');
+    const mLower = (candidate.method || 'get').toLowerCase().replace(/\s+/g, '-');
+    method.className = `method m-${mLower}`;
+    method.textContent = candidate.method;
+
+    const status = document.createElement('span');
+    status.className = `status ${statusClass(candidate.entry)}`;
+    status.textContent = candidate.status ? String(candidate.status) : '';
+
+    const urlSpan = document.createElement('span');
+    urlSpan.className = 'path reveal-url';
+    urlSpan.textContent = candidate.url;
+    urlSpan.title = candidate.url;
+
+    head.append(method, status, urlSpan);
+    addCopyButton(head, candidate.url, 'Copy URL');
+    card.appendChild(head);
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'reveal-meta-row';
+
+    const confBadge = document.createElement('span');
+    confBadge.className = `conf-badge conf-${candidate.confidence.toLowerCase()}`;
+    confBadge.textContent = `${candidate.confidence.toUpperCase()} MATCH`;
+
+    const reasonBadge = document.createElement('span');
+    reasonBadge.className = 'conf-reason';
+    reasonBadge.textContent = candidate.matchReason;
+
+    metaRow.append(confBadge, reasonBadge);
+    if (candidate.matchDetails) {
+      const detailsText = document.createElement('span');
+      detailsText.className = 'reveal-details-note';
+      detailsText.textContent = candidate.matchDetails;
+      metaRow.appendChild(detailsText);
+    }
+    card.appendChild(metaRow);
+
+    if (candidate.jsonPath) {
+      const pathRow = document.createElement('div');
+      pathRow.className = 'reveal-field-row';
+      const pathLabel = document.createElement('div');
+      pathLabel.className = 'reveal-label';
+      pathLabel.textContent = 'JSON PATH';
+      const pathVal = document.createElement('div');
+      pathVal.className = 'reveal-path-val';
+      const code = document.createElement('code');
+      code.className = 'raw';
+      code.textContent = candidate.jsonPath;
+      pathVal.appendChild(code);
+      addCopyButton(pathVal, candidate.jsonPath, 'Copy path');
+      pathRow.append(pathLabel, pathVal);
+      card.appendChild(pathRow);
+    }
+
+    const diffRow = document.createElement('div');
+    diffRow.className = 'reveal-val-diff';
+
+    const dispBox = document.createElement('div');
+    dispBox.className = 'reveal-val-box';
+    const dispTitle = document.createElement('div');
+    dispTitle.className = 'reveal-label';
+    dispTitle.textContent = 'DISPLAYED VALUE';
+    const dispVal = document.createElement('div');
+    dispVal.className = 'reveal-val-text';
+    dispVal.textContent = candidate.displayedValue || '(empty)';
+    dispBox.append(dispTitle, dispVal);
+
+    const apiBox = document.createElement('div');
+    apiBox.className = 'reveal-val-box';
+    const apiTitle = document.createElement('div');
+    apiTitle.className = 'reveal-label';
+    apiTitle.textContent = 'API VALUE';
+    const apiVal = document.createElement('div');
+    apiVal.className = 'reveal-val-text';
+    apiVal.textContent = candidate.apiValue != null ? String(candidate.apiValue) : '(null)';
+    apiBox.append(apiTitle, apiVal);
+
+    diffRow.append(dispBox, apiBox);
+    card.appendChild(diffRow);
+
+    // Provenance visual flow banner
+    const flow = document.createElement('div');
+    flow.className = 'reveal-provenance-flow';
+
+    const flowUi = document.createElement('div');
+    flowUi.className = 'flow-step flow-ui';
+    const flowUiTag = document.createElement('div');
+    flowUiTag.className = 'flow-tag';
+    flowUiTag.textContent = 'UI VALUE';
+    const flowUiVal = document.createElement('div');
+    flowUiVal.className = 'flow-val';
+    flowUiVal.textContent = candidate.displayedValue || '(empty)';
+    flowUi.append(flowUiTag, flowUiVal);
+
+    const flowArrow = document.createElement('div');
+    flowArrow.className = 'flow-arrow';
+    flowArrow.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>';
+
+    const flowApi = document.createElement('div');
+    flowApi.className = 'flow-step flow-api';
+    const flowApiTag = document.createElement('div');
+    flowApiTag.className = 'flow-tag';
+    flowApiTag.textContent = 'API SOURCE';
+    const flowApiVal = document.createElement('div');
+    flowApiVal.className = 'flow-val';
+    flowApiVal.textContent = candidate.apiValue != nu
+    ll ? String(candidate.apiValue) : '(null)';
+    flowApi.append(flowApiTag, flowApiVal);
+    if (candidate.jsonPath) {
+      const flowPath = document.createElement('div');
+      flowPath.className = 'flow-path';
+      flowPath.textContent = candidate.jsonPath;
+      flowApi.appendChild(flowPath);
+    }
+
+    flow.append(flowUi, flowArrow, flowApi);
+    card.appendChild(flow);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'reveal-actions';
+
+    const viewReqBtn = document.createElement('button');
+    viewReqBtn.type = 'button';
+    viewReqBtn.className = 'mini-btn';
+    viewReqBtn.textContent = 'View in Request List';
+    viewReqBtn.addEventListener('click', () => {
+      jumpToEntry(candidate.entry);
+    });
+    actions.appendChild(viewReqBtn);
+
+    if (candidate.entry && candidate.entry.responseBody) {
+      const copyResBtn = document.createElement('button');
+      copyResBtn.type = 'button';
+      copyResBtn.className = 'mini-btn';
+      copyResBtn.textContent = 'Copy Response';
+      copyResBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(candidate.entry.responseBody).then(() => {
+          copyResBtn.textContent = 'Copied';
+          setTimeout(() => { copyResBtn.textContent = 'Copy Response'; }, 1000);
+        }).catch(() => {});
+      });
+      actions.appendChild(copyResBtn);
+    }
+
+    card.appendChild(actions);
+
+    if (isPrimary && candidate.entry && candidate.entry.responseBody) {
+      let parsed = null;
+      try { parsed = JSON.parse(candidate.entry.responseBody); }
+      catch { if (typeof tryParsePartialJson === 'function') parsed = tryParsePartialJson(candidate.entry.responseBody); }
+
+      if (parsed !== null && typeof parsed === 'object') {
+        const treeWrap = document.createElement('div');
+        treeWrap.className = 'jtree reveal-jtree';
+        const root = jsonNode(null, parsed, false, candidate.jsonPath, '');
+        if (root.tagName === 'DETAILS') root.open = true;
+        treeWrap.appendChild(root);
+        card.appendChild(buildInspectSection('Response Preview (field highlighted)', true, treeWrap));
+
+        requestAnimationFrame(() => {
+          const matchEl = treeWrap.querySelector('.j-match');
+          if (matchEl) {
+            matchEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            matchEl.classList.add('j-match-flash');
+            setTimeout(() => matchEl.classList.remove('j-match-flash'), 1500);
+          }
+        });
+      }
+    }
+
+    return card;
+  }
+
+  function renderContainerCard(group) {
+    const card = document.createElement('div');
+    card.className = 'reveal-card primary';
+
+    const head = document.createElement('div');
+    head.className = 'reveal-card-head';
+
+    const method = document.createElement('span');
+    const mLower = (group.method || 'get').toLowerCase().replace(/\s+/g, '-');
+    method.className = `method m-${mLower}`;
+    method.textContent = group.method;
+
+    const status = document.createElement('span');
+    status.className = `status ${statusClass(group.entry)}`;
+    status.textContent = group.status ? String(group.status) : '';
+
+    const urlSpan = document.createElement('span');
+    urlSpan.className = 'path reveal-url';
+    urlSpan.textContent = group.url;
+    urlSpan.title = group.url;
+
+    head.append(method, status, urlSpan);
+    addCopyButton(head, group.url, 'Copy URL');
+    card.appendChild(head);
+
+    const metaRow = document.createElement('div');
+    metaRow.className = 'reveal-meta-row';
+
+    const confBadge = document.createElement('span');
+    confBadge.className = `conf-badge conf-${group.confidence.toLowerCase()}`;
+    confBadge.textContent = `${group.confidence.toUpperCase()} MATCH (${group.matchCount} field${group.matchCount > 1 ? 's' : ''})`;
+    metaRow.appendChild(confBadge);
+    card.appendChild(metaRow);
+
+    const fieldList = document.createElement('div');
+    fieldList.className = 'reveal-field-list';
+    for (const field of group.matchedFields) {
+      const item = document.createElement('div');
+      item.className = 'reveal-matched-item';
+
+      const left = document.createElement('div');
+      left.className = 'reveal-matched-left';
+      const dispVal = document.createElement('span');
+      dispVal.className = 'reveal-matched-ui';
+      dispVal.textContent = field.displayedValue || '(empty)';
+      left.appendChild(dispVal);
+
+      const arrow = document.createElement('span');
+      arrow.className = 'reveal-matched-arrow';
+      arrow.textContent = ' ──▶ ';
+
+      const right = document.createElement('div');
+      right.className = 'reveal-matched-right';
+      const pathVal = document.createElement('code');
+      pathVal.className = 'raw reveal-matched-path';
+      pathVal.textContent = field.jsonPath;
+      right.appendChild(pathVal);
+
+      item.append(left, arrow, right);
+      fieldList.appendChild(item);
+    }
+    card.appendChild(fieldList);
+
+    const actions = document.createElement('div');
+    actions.className = 'reveal-actions';
+
+    const viewReqBtn = document.createElement('button');
+    viewReqBtn.type = 'button';
+    viewReqBtn.className = 'mini-btn';
+    viewReqBtn.textContent = 'View in Request List';
+    viewReqBtn.addEventListener('click', () => {
+      jumpToEntry(group.entry);
+    });
+    actions.appendChild(viewReqBtn);
+
+    if (group.entry && group.entry.responseBody) {
+      const copyResBtn = document.createElement('button');
+      copyResBtn.type = 'button';
+      copyResBtn.className = 'mini-btn';
+      copyResBtn.textContent = 'Copy Response';
+      copyResBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(group.entry.responseBody).then(() => {
+          copyResBtn.textContent = 'Copied';
+          setTimeout(() => { copyResBtn.textContent = 'Copy Response'; }, 1000);
+        }).catch(() => {});
+      });
+      actions.appendChild(copyResBtn);
+    }
+    card.appendChild(actions);
+
+    return card;
+  }
+
+  function renderRevealResult(context) {
+    if (!revealBodyEl) return;
+    revealBodyEl.textContent = '';
+
+    const header = document.createElement('div');
+    header.className = 'reveal-elem-header';
+
+    const tagBadge = document.createElement('span');
+    tagBadge.className = 'reveal-elem-tag';
+    const idStr = context.id ? `#${context.id}` : '';
+    const clsStr = context.classes && context.classes.length ? `.${context.classes.slice(0, 2).join('.')}` : '';
+    tagBadge.textContent = `<${context.tag}${idStr}${clsStr}>`;
+
+    const textPreview = document.createElement('span');
+    textPreview.className = 'reveal-elem-preview';
+    textPreview.textContent = context.text ? `"${context.text.slice(0, 60)}${context.text.length > 60 ? '…' : ''}"` : '(no text)';
+
+    header.append(tagBadge, textPreview);
+    revealBodyEl.appendChild(header);
+
+    const result = findDataSources(context, entries);
+
+    if (result.isContainer) {
+      if (result.contributingRequests && result.contributingRequests.length > 0) {
+        const banner = document.createElement('div');
+        banner.className = 'reveal-container-banner';
+        banner.textContent = `${result.contributingRequests.length} API request${result.contributingRequests.length > 1 ? 's' : ''} contributed ${result.totalFieldsMatched} field${result.totalFieldsMatched > 1 ? 's' : ''} to this element`;
+        revealBodyEl.appendChild(banner);
+
+        for (const grp of result.contributingRequests) {
+          revealBodyEl.appendChild(renderContainerCard(grp));
+        }
+      } else {
+        const emptyBox = document.createElement('div');
+        emptyBox.className = 'reveal-empty-box';
+        const title = document.createElement('div');
+        title.className = 'reveal-empty-title';
+        title.textContent = 'No matching network sources found';
+        emptyBox.appendChild(title);
+        const msg = document.createElement('pre');
+        msg.className = 'reveal-empty-desc';
+        msg.textContent = result.fallback || 'No API responses matched the fields inside this card/container.';
+        emptyBox.appendChild(msg);
+        revealBodyEl.appendChild(emptyBox);
+      }
+      return;
+    }
+
+    const { candidates, fallback } = result;
+
+    if (candidates.length > 0) {
+      revealBodyEl.appendChild(renderCandidateCard(candidates[0], true));
+
+      if (candidates.length > 1) {
+        const altWrap = document.createElement('div');
+        altWrap.className = 'reveal-alt-list';
+        for (let i = 1; i < candidates.length; i++) {
+          altWrap.appendChild(renderCandidateCard(candidates[i], false));
+        }
+        revealBodyEl.appendChild(buildInspectSection(`Other potential matches (${candidates.length - 1})`, false, altWrap));
+      }
+    } else {
+      const emptyBox = document.createElement('div');
+      emptyBox.className = 'reveal-empty-box';
+
+      const title = document.createElement('div');
+      title.className = 'reveal-empty-title';
+      title.textContent = 'No matching network source found';
+      emptyBox.appendChild(title);
+
+      const msg = document.createElement('pre');
+      msg.className = 'reveal-empty-desc';
+      msg.textContent = fallback || 'No API response matched this value.';
+      emptyBox.appendChild(msg);
+
+      revealBodyEl.appendChild(emptyBox);
+    }
+  }
+
+  if (revealBtn && revealPanel) {
+    const setRevealPicking = (on) => {
+      revealBtn.classList.toggle('active', on);
+      revealPickBtn.textContent = on ? 'Hover to inspect, click to reveal (Esc)' : 'Pick value';
+    };
+
+    const showRevealError = (msg) => {
+      if (!revealBodyEl) return;
+      revealBodyEl.textContent = '';
+      const note = document.createElement('div');
+      note.className = 'manual-error';
+      note.textContent = msg;
+      revealBodyEl.appendChild(note);
+    };
+
+    const startRevealPicking = () => {
+      if (currentTabId == null) return;
+      setRevealPicking(true);
+      chrome.tabs.sendMessage(currentTabId, { type: 'netlens:reveal:start' }, () => {
+        if (!chrome.runtime.lastError) return;
+        chrome.scripting.executeScript({
+          target: { tabId: currentTabId },
+          files: ['css-format.js', 'net-format.js', 'decoders.js', 'provenance.js', 'content.js']
+        }, () => {
+          if (chrome.runtime.lastError) {
+            setRevealPicking(false);
+            showRevealError('Could not reach this page — reload the tab and try again.');
+            return;
+          }
+          chrome.tabs.sendMessage(currentTabId, { type: 'netlens:reveal:start' }, () => {
+            if (chrome.runtime.lastError) {
+              setRevealPicking(false);
+              showRevealError('Could not reach this page — reload the tab and try again.');
+            }
+          });
+        });
+      });
+    };
+
+    const stopRevealPicking = () => {
+      setRevealPicking(false);
+      if (currentTabId != null) {
+        chrome.tabs.sendMessage(currentTabId, { type: 'netlens:reveal:stop' }, () => { void chrome.runtime.lastError; });
+      }
+    };
+
+    const openRevealPanel = () => { openSlidePanel(revealPanel); startRevealPicking(); };
+    const closeRevealPanel = () => { stopRevealPicking(); closeSlidePanel(revealPanel); };
+    slidePanels.push({ el: revealPanel, close: closeRevealPanel });
+
+    revealBtn.addEventListener('click', () => {
+      if (revealPanel.hidden) openRevealPanel(); else closeRevealPanel();
+    });
+    revealPanelClose.addEventListener('click', closeRevealPanel);
+    revealPickBtn.addEventListener('click', startRevealPicking);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !revealPanel.hidden) stopRevealPicking();
+    });
+
+    chrome.runtime.onMessage.addListener((msg, sender) => {
+      if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
+      if (msg.type === 'netlens:reveal:result') {
+        setRevealPicking(false);
+        if (revealPanel.hidden) openSlidePanel(revealPanel);
+        renderRevealResult(msg.context);
+      } else if (msg.type === 'netlens:reveal:cancelled') {
+        setRevealPicking(false);
+      }
+    });
+  }
+
   if (inspectBtn && inspectPanel) {
     const setPicking = (on) => {
       inspectBtn.classList.toggle('active', on);
@@ -2861,7 +3309,10 @@
       chrome.tabs.sendMessage(currentTabId, { type: 'netlens:inspect:start' }, () => {
         if (!chrome.runtime.lastError) return;
         // Stale content script (e.g. the extension was reloaded after this tab opened): reinject and retry once.
-        chrome.scripting.executeScript({ target: { tabId: currentTabId }, files: ['content.js'] }, () => {
+        chrome.scripting.executeScript({
+          target: { tabId: currentTabId },
+          files: ['css-format.js', 'net-format.js', 'decoders.js', 'provenance.js', 'content.js']
+        }, () => {
           if (chrome.runtime.lastError) {
             setPicking(false);
             showInspectError('Could not reach this page — reload the tab and try again.');
