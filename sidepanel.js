@@ -18,6 +18,7 @@
 
   let currentTabId = null;
   let currentTabUrl = '';
+  let panelWindowId = null;
   let entries = [];
   let currentRevealContext = null;
   const restoredIds = new Set();
@@ -2099,12 +2100,19 @@
 
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs && tabs[0]) {
+      panelWindowId = tabs[0].windowId;
       currentTabUrl = tabs[0].url;
       trackTab(tabs[0].id);
     }
   });
 
-  chrome.tabs.onActivated.addListener(({ tabId }) => trackTab(tabId));
+  function isOwnWindow(tab) {
+    return panelWindowId == null || tab.windowId === panelWindowId;
+  }
+
+  chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+    if (isOwnWindow({ windowId })) trackTab(tabId);
+  });
 
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tabId !== currentTabId) return;
@@ -3426,7 +3434,8 @@
 
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg || !sender.tab) return;
-      if (currentTabId != null && sender.tab.id !== currentTabId) {
+      if (sender.tab.id !== currentTabId) {
+        if (msg.type !== 'netlens:reveal:result' || !isOwnWindow(sender.tab)) return;
         trackTab(sender.tab.id);
       }
       if (msg.type === 'netlens:reveal:result') {
@@ -3502,7 +3511,8 @@
 
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg || !sender.tab) return;
-      if (currentTabId != null && sender.tab.id !== currentTabId) {
+      if (sender.tab.id !== currentTabId) {
+        if (msg.type !== 'netlens:inspect:result' || !isOwnWindow(sender.tab)) return;
         trackTab(sender.tab.id);
       }
       if (msg.type === 'netlens:inspect:hover') {
@@ -3525,16 +3535,21 @@
     });
   }
 
+  // Written by content.js only when no open panel accepted the pick, so it is
+  // read once at startup. A storage.onChanged listener would let an open panel
+  // in another window steal it. The age cap drops picks whose panel never opened
+  // (sidePanel.open needs a user gesture the relay may not carry).
+  const PENDING_ACTION_MAX_AGE_MS = 30000;
+
   function consumePendingAction(action) {
     if (!action || !action.type) return;
     chrome.storage.local.remove('netlensPendingAction');
-    if (action.type === 'reveal' && action.context) {
-      if (revealPanel && revealPanel.hidden) openSlidePanel(revealPanel);
-      if (typeof setRevealPicking === 'function') setRevealPicking(false);
+    if (!action.at || Date.now() - action.at > PENDING_ACTION_MAX_AGE_MS) return;
+    if (action.type === 'reveal' && action.context && revealPanel) {
+      if (revealPanel.hidden) openSlidePanel(revealPanel);
       renderRevealResult(action.context);
-    } else if (action.type === 'inspect' && action.data) {
-      if (inspectPanel && inspectPanel.hidden) openSlidePanel(inspectPanel);
-      if (typeof setPicking === 'function') setPicking(false);
+    } else if (action.type === 'inspect' && action.data && inspectPanel) {
+      if (inspectPanel.hidden) openSlidePanel(inspectPanel);
       renderInspectResult(action.data);
     }
   }
@@ -3544,12 +3559,6 @@
       if (res && res.netlensPendingAction) consumePendingAction(res.netlensPendingAction);
     });
   } catch {}
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.netlensPendingAction && changes.netlensPendingAction.newValue) {
-      consumePendingAction(changes.netlensPendingAction.newValue);
-    }
-  });
 
   window.addEventListener('keydown', (e) => {
     const tag = (e.target && e.target.tagName || '').toLowerCase();
