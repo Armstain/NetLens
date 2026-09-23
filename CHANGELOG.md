@@ -1,5 +1,15 @@
 # Changelog
 
+## 6.7
+
+- Fixed the side panel jumping to a background tab whenever that tab logged network activity; it now only follows a Reveal or Inspect pick, and only within its own window.
+- Fixed the server-rendered/SSR check reading the page's HTML after client scripts had already filled it in, which mislabelled API-sourced values as server-rendered; the snapshot is taken at `DOMContentLoaded` again.
+- Fixed a pending Reveal/Inspect pick (saved when the side panel was closed) staying around indefinitely and firing in the wrong tab; it now expires after 30 seconds and only applies in its own window.
+- Element pickers: arrow keys (`↑`/`↓`) walk to the parent/child element and `Enter` picks the highlighted one, so a card can be grabbed from a small span inside it. A hint bar shows the controls while picking.
+- Element pickers now block `mousedown`/`pointerdown` too, so page menus, drag handlers, and links no longer fire while picking.
+- Fixed arrow-key navigation doing nothing when a pick was started via keyboard shortcut before the mouse had moved.
+- Fixed a WebSocket-sourced combined-field match in Reveal API Source being labelled as a plain network request.
+
 ## 6.6
 
 - Streamlined filter bar: replaced cramped checkboxes with a clean segmented control (`All` | `API` | `Console`), giving the search input ample room to breathe.
@@ -7,12 +17,11 @@
 - Contextual log level filter: a clean dropdown appears when viewing the `Console` scope to quickly filter by `Errors`, `Warn`, `Info`, `Log`, or `Debug`.
 - Configurable log capture: added a setting in Settings to enable/disable capturing verbose console logs (`log`, `info`, `debug`) alongside errors and warnings.
 - Fixed Reveal API Source shortcut when side panel is closed: selecting an element via keyboard shortcut now seamlessly persists the target context and automatically opens the Reveal panel with matched data sources.
-- Performance optimization: made HTML snapshotting lazy, completely eliminating main-thread DOM serialization on `DOMContentLoaded` across all page loads.
 
 ## 6.5
 
 - Added "Reveal API Source" (crosshair icon): click any element on the page to trace exactly which API request or SSR hydration payload populated it. Computes path provenance (e.g. `data.products[0].price`), highlights matching values, and displays confidence rankings.
-- Added SSR / Hydration State Extraction & Provenance: automatically traces Next.js (`__NEXT_DATA__`, RSC flight chunks), Nuxt (`__NUXT_DATA__`), Remix (`__remixContext`), and Schema.org JSON-LD structured data when no client-side fetch is responsible for the rendered markup. SSR candidates feature distinct hydration badges, a "Copy SSR Payload" action, and interactive highlighted JSON trees.
+- Added SSR / Hydration State Extraction & Provenance: automatically traces embedded JSON hydration scripts such as Next.js `__NEXT_DATA__`, Nuxt `__NUXT_DATA__`, and Schema.org JSON-LD structured data when no client-side fetch is responsible for the rendered markup. SSR candidates feature distinct hydration badges, a "Copy SSR Payload" action, and interactive highlighted JSON trees.
 - Added customizable keyboard shortcuts: trigger element selection directly from the webpage (`Alt+Shift+R` for Reveal, `Alt+Shift+C` for CSS Inspect) or the side panel. Configurable via dropdown selectors in Settings or through Chrome's global shortcuts page (`chrome://extensions/shortcuts`).
 - In-page element pickers now toggle on/off cleanly with their respective shortcut and automatically open the side panel if it was closed when an element is locked.
 - Element Inspector now automatically reveals its slide-in panel upon selection even when navigating other sidepanel tabs.
