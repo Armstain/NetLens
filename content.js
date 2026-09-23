@@ -646,6 +646,13 @@
     if (initialHtmlSnapshot || !document.documentElement) return;
     try { initialHtmlSnapshot = document.documentElement.innerHTML.slice(0, 500000); } catch {}
   }
+  // Must run before the page's scripts render, or every visible string reads
+  // as server-rendered and the SSR/network distinction in Reveal is lost.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', captureInitialHtml, { once: true });
+  } else {
+    captureInitialHtml();
+  }
 
   function extractElementContext(el) {
     if (!el) return null;
@@ -1130,7 +1137,7 @@
       chrome.runtime.sendMessage({ type: 'netlens:inspect:result', data }, (res) => {
         if (chrome.runtime.lastError || !res || !res.ok) {
           try {
-            chrome.storage.local.set({ netlensPendingAction: { type: 'inspect', data } }, () => {
+            chrome.storage.local.set({ netlensPendingAction: { type: 'inspect', data, at: Date.now() } }, () => {
               try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
             });
           } catch {}
@@ -1158,7 +1165,7 @@
           chrome.runtime.sendMessage({ type: 'netlens:reveal:result', context }, (res) => {
             if (chrome.runtime.lastError || !res || !res.ok) {
               try {
-                chrome.storage.local.set({ netlensPendingAction: { type: 'reveal', context } }, () => {
+                chrome.storage.local.set({ netlensPendingAction: { type: 'reveal', context, at: Date.now() } }, () => {
                   try { chrome.runtime.sendMessage({ type: 'netlens:openPanel' }); } catch {}
                 });
               } catch {}

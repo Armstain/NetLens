@@ -422,7 +422,7 @@ function findDataSources(context, entries, options = {}) {
                 matchDetails: entry.kind === 'ssr'
                   ? `Constructed from adjacent hydration fields (${entry.url})`
                   : `Combined fields from ${parentPath || 'root'}`,
-                sourceType: entry.kind === 'ssr' ? 'ssr' : 'network',
+                sourceType: entry.kind === 'ssr' ? 'ssr' : (entry.kind === 'wsframe' ? 'websocket' : 'network'),
               });
             }
           }

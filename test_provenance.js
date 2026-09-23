@@ -427,6 +427,8 @@ assert.strictEqual(hotelContrib.confidence, 'High');
 // reqAds should contribute 1 field
 const adsContrib = resComposite.contributingRequests.find(r => r.requestId === 22);
 assert.ok(adsContrib);
+assert.strictEqual(adsContrib.matchCount, 1);
+
 // 18. SSR Hydration: Next.js __NEXT_DATA__
 const nextDataPayload = {
   id: '__NEXT_DATA__',
