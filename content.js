@@ -636,7 +636,17 @@
   const MAX_HTML = 20 * 1024;
   let overlayEl = null;
   let labelEl = null;
+  let hintEl = null;
   let pickerActive = false;
+  // The raw element under the cursor, kept apart from lastHovered so that
+  // mouse jitter over the same element doesn't undo an arrow-key walk.
+  let hoverBase = null;
+  let pickTrail = [];
+  // Kept up to date always, not just while picking, so a picker started via
+  // keyboard shortcut (no mouse movement yet) still has a target to seed from.
+  let lastMouseX = -1;
+  let lastMouseY = -1;
+  window.addEventListener('mousemove', (e) => { lastMouseX = e.clientX; lastMouseY = e.clientY; }, { capture: true, passive: true });
   let pickerMode = 'inspect';
   let rafPending = false;
   let lastHovered = null;
@@ -818,11 +828,15 @@
     overlayEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;box-sizing:border-box;transition:none;' +
       (isReveal ? 'background:rgba(16, 185, 129, 0.15);border:1px solid #10b981;' : 'background:rgba(99, 102, 241, 0.15);border:1px solid #818cf8;');
     labelEl = document.createElement('div');
-    labelEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;' +
+    labelEl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;display:none;' +
       'background:#161b22;color:#e6edf3;font:11px ui-monospace,monospace;padding:2px 6px;' +
       'border-radius:4px;border:1px solid ' + (isReveal ? '#059669;' : '#30363d;') + 'white-space:nowrap;';
-    document.documentElement.appendChild(overlayEl);
-    document.documentElement.appendChild(labelEl);
+    hintEl = document.createElement('div');
+    hintEl.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);pointer-events:none;' +
+      'z-index:2147483647;background:#161b22;color:#e6edf3;font:12px ui-monospace,monospace;padding:6px 12px;' +
+      'border-radius:6px;border:1px solid ' + (isReveal ? '#059669' : '#818cf8') + ';box-shadow:0 2px 8px rgba(0,0,0,0.4);white-space:nowrap;';
+    hintEl.textContent = `${isReveal ? 'Reveal API source' : 'Inspect CSS'}  ·  click to pick  ·  ↑↓ parent/child  ·  Enter pick  ·  Esc cancel`;
+    document.documentElement.append(overlayEl, labelEl, hintEl);
   }
 
   function positionOverlay(el) {
@@ -860,13 +874,17 @@
     const cls = typeof el.className === 'string' && el.className.trim()
       ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
     if (pickerMode === 'reveal') {
-      labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  Click to reveal API source`;
+      const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      const preview = text ? `"${text.length > 40 ? text.slice(0, 40) + '…' : text}"` : '(no text)';
+      labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  ${preview}`;
     } else {
       labelEl.textContent = `${el.tagName.toLowerCase()}${id}${cls}  ${Math.round(rect.width)}×${Math.round(rect.height)}`;
     }
+    labelEl.style.display = '';
     const top = rect.top > 20 ? rect.top - 20 : rect.bottom + 2;
+    const left = Math.max(0, Math.min(rect.left, window.innerWidth - labelEl.offsetWidth - 4));
     labelEl.style.top = `${toLocalY(top)}px`;
-    labelEl.style.left = `${toLocalX(rect.left)}px`;
+    labelEl.style.left = `${toLocalX(left)}px`;
   }
 
   // A computed style carries ~340 properties and nearly all of them are browser
@@ -1008,12 +1026,7 @@
     } catch { /* panel closed mid-move */ }
   }
 
-  function onMouseMove(e) {
-    lastHovered = e.target;
-    let t = e.target;
-    if (t && t.nodeType === 3) t = t.parentElement;
-    if (!t || t.nodeType !== 1) return;
-    lastHovered = t;
+  function refreshPick() {
     if (rafPending) return;
     rafPending = true;
     requestAnimationFrame(() => {
@@ -1022,6 +1035,28 @@
       positionOverlay(lastHovered);
       if (pickerMode !== 'reveal') sendHover(lastHovered);
     });
+  }
+
+  function onMouseMove(e) {
+    let t = e.target;
+    if (t && t.nodeType === 3) t = t.parentElement;
+    if (!t || t.nodeType !== 1 || t === hoverBase) return;
+    hoverBase = t;
+    lastHovered = t;
+    pickTrail = [];
+    refreshPick();
+  }
+
+  // Swallows the press half of a click so page handlers bound to
+  // mousedown/pointerdown (menus, drag, SPA links) don't fire mid-pick.
+  function swallowPointer(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
+
+  function onPickScroll() {
+    if (lastHovered) refreshPick();
   }
 
   // --------------------------------------------------------- state rules
@@ -1155,7 +1190,10 @@
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    let target = lastHovered || e.target;
+    pickTarget(lastHovered || e.target);
+  }
+
+  function pickTarget(target) {
     if (target && target.nodeType === 3) target = target.parentElement;
     if (pickerMode === 'reveal') {
       const context = extractElementContext(target);
@@ -1179,6 +1217,30 @@
   }
 
   function onKeydown(e) {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'Enter') {
+      if (!lastHovered) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        pickTarget(lastHovered);
+        return;
+      }
+      let next = null;
+      if (e.key === 'ArrowUp') {
+        const parent = lastHovered.parentElement;
+        if (parent && parent !== document.documentElement) {
+          pickTrail.push(lastHovered);
+          next = parent;
+        }
+      } else {
+        next = pickTrail.pop() || lastHovered.firstElementChild;
+      }
+      if (next) {
+        lastHovered = next;
+        refreshPick();
+      }
+      return;
+    }
     if (e.key !== 'Escape') return;
     const mode = pickerMode;
     stopPicker();
@@ -1216,7 +1278,7 @@
 
     for (let i = 0; i < limit; i++) {
       const el = all[i];
-      if (el === defaultsFrame || el === overlayEl || el === labelEl) continue;
+      if (el === defaultsFrame || el === overlayEl || el === labelEl || el === hintEl) continue;
       if (SCAN_SKIP_TAGS.has(el.tagName.toLowerCase())) continue;
 
       const cs = getComputedStyle(el);
@@ -1266,20 +1328,38 @@
     pickerActive = true;
     pickerMode = mode;
     ensureOverlay();
+    if (!lastHovered && lastMouseX >= 0) {
+      const seed = document.elementFromPoint(lastMouseX, lastMouseY);
+      if (seed && seed.nodeType === 1) {
+        hoverBase = seed;
+        lastHovered = seed;
+        refreshPick();
+      }
+    }
     document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeydown, true);
+    document.addEventListener('scroll', onPickScroll, { capture: true, passive: true });
+    for (const type of SWALLOWED_POINTER_EVENTS) document.addEventListener(type, swallowPointer, true);
   }
+
+  const SWALLOWED_POINTER_EVENTS = ['pointerdown', 'mousedown', 'pointerup', 'mouseup'];
 
   function stopPicker() {
     if (!pickerActive) return;
     pickerActive = false;
     lastSentEl = null;
+    lastHovered = null;
+    hoverBase = null;
+    pickTrail = [];
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('keydown', onKeydown, true);
+    document.removeEventListener('scroll', onPickScroll, { capture: true });
+    for (const type of SWALLOWED_POINTER_EVENTS) document.removeEventListener(type, swallowPointer, true);
     if (overlayEl) { overlayEl.remove(); overlayEl = null; }
     if (labelEl) { labelEl.remove(); labelEl = null; }
+    if (hintEl) { hintEl.remove(); hintEl = null; }
     // DEFAULTS survives; only the frame goes, so a later pick reuses the cache.
     if (defaultsFrame) { defaultsFrame.remove(); defaultsFrame = null; }
   }
