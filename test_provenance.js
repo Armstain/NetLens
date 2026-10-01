@@ -3,6 +3,7 @@ const {
   normalizeText,
   extractNumeric,
   indexResponseBody,
+  parseRscPayload,
   findDataSources,
 } = require('./provenance.js');
 
@@ -606,6 +607,43 @@ const resMarkedUpPrice = findDataSources(
 assert.strictEqual(resMarkedUpPrice.candidates.length, 1);
 assert.strictEqual(resMarkedUpPrice.candidates[0].matchReason, 'container-entity');
 assert.strictEqual(resMarkedUpPrice.candidates[0].jsonPath, 'results[1].sell_price');
+
+// 26. Next.js RSC flight payload: parsed into rows, field paths and numbers work
+const rscBody = [
+  '0:{"a":"$@1","f":"","b":"0DDw2QF"}',
+  '1:{"status":"success","total_hotel":2,"data":[{"hotel_name":"Shama Petchburi 47 Bangkok","address":"36 Soi soonvijai, New Petchburi Rd 47","sell_price":597.47},{"hotel_name":"Holiday Inn Express Bangkok","sell_price":557.98}]}',
+  '2:I[7123,["static/chunks/app.js"],"HotelCard"]',
+  '3:["$","button",null,{"className":"btn","children":"View Details Now"}]',
+].join('\n');
+const parsedRsc = parseRscPayload(rscBody);
+assert.ok(parsedRsc);
+assert.strictEqual(parsedRsc['1'].data[0].hotel_name, 'Shama Petchburi 47 Bangkok');
+assert.strictEqual(parseRscPayload('{"plain":"json"}'), null);
+assert.strictEqual(parseRscPayload('12:30 PM meeting'), null);
+
+const reqRsc = {
+  id: 60,
+  kind: 'fetch',
+  method: 'GET',
+  url: 'https://flyhavenza.com/hotel/search?guest_nationality=BD&_rsc=52Qv5FjCe3RfogR4',
+  status: 200,
+  contentType: 'text/x-component',
+  startedAt: 8000,
+  responseBody: rscBody,
+};
+assert.strictEqual(indexResponseBody(reqRsc).isRsc, true);
+
+const resRscName = findDataSources({ text: 'Shama Petchburi 47 Bangkok' }, [reqRsc]);
+assert.strictEqual(resRscName.candidates[0].jsonPath, '1.data[0].hotel_name');
+assert.strictEqual(resRscName.candidates[0].confidence, 'High');
+
+const resRscPrice = findDataSources({ text: '৳597.47' }, [reqRsc]);
+assert.strictEqual(resRscPrice.candidates[0].jsonPath, '1.data[0].sell_price');
+
+// Hardcoded JSX text in the server component tree is flagged low, not data
+const resRscLabel = findDataSources({ text: 'View Details Now' }, [reqRsc]);
+assert.strictEqual(resRscLabel.candidates[0].confidence, 'Low');
+assert.ok(resRscLabel.candidates[0].matchDetails.includes('server-component markup'));
 
 console.log('All provenance tests passed!');
 

@@ -920,12 +920,7 @@
       return;
     }
     addCopyButton(container, text);
-    let parsed = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = tryParsePartialJson(text);
-    }
+    const parsed = parseBody(text);
 
     if (parsed !== null && typeof parsed === 'object') {
       const tree = document.createElement('div');
@@ -3159,9 +3154,7 @@
     card.appendChild(actions);
 
     if (isPrimary && candidate.entry && candidate.entry.responseBody) {
-      let parsed = null;
-      try { parsed = JSON.parse(candidate.entry.responseBody); }
-      catch { if (typeof tryParsePartialJson === 'function') parsed = tryParsePartialJson(candidate.entry.responseBody); }
+      const parsed = parseBody(candidate.entry.responseBody);
 
       if (parsed !== null && typeof parsed === 'object') {
         const treeWrap = document.createElement('div');

@@ -1,7 +1,9 @@
 // Data provenance and API source mapping engine. Pure functions, no DOM.
 
-const MAX_INDEX_ITEMS = 500;
-const MAX_DEPTH = 8;
+// Sized for list endpoints and RSC payloads, where router state and markup
+// rows share the budget with the actual data.
+const MAX_INDEX_ITEMS = 3000;
+const MAX_DEPTH = 12;
 
 function normalizeText(str) {
   if (typeof str !== 'string') return '';
@@ -60,6 +62,45 @@ function matchDateText(dateObj, text) {
   return parts.some(p => norm.includes(p) || p.includes(norm));
 }
 
+// React Server Components "flight" payload (Next.js App Router `?_rsc=`
+// responses, content-type text/x-component): one row per line, `<hex id>:` then
+// a JSON value, or a letter tag (I import, HL hint, T text, E error, D debug)
+// before it. Rows become keys of one object so paths read `1.data[0].name`.
+// ponytail: a T row's text can span lines; only its first line is kept.
+const RSC_ROW = /^([0-9a-fA-F]+):([A-Z]{0,2})(.*)$/;
+
+function parseRscPayload(body) {
+  if (typeof body !== 'string') return null;
+  const firstLine = body.slice(0, body.indexOf('\n') === -1 ? body.length : body.indexOf('\n'));
+  if (!/^[0-9a-fA-F]+:(?:[A-Z]{0,2})?[[{"]/.test(firstLine)) return null;
+
+  const out = {};
+  let parsedRows = 0;
+  for (const line of body.split('\n')) {
+    const m = RSC_ROW.exec(line);
+    if (!m) continue;
+    const [, id, tag, rest] = m;
+    let value;
+    if (tag === 'T') {
+      const comma = rest.indexOf(',');
+      value = comma === -1 ? rest : rest.slice(comma + 1);
+    } else {
+      try { value = JSON.parse(rest); } catch {
+        value = typeof tryParsePartialJson === 'function' ? tryParsePartialJson(rest) : null;
+      }
+    }
+    if (value == null) continue;
+    out[id] = value;
+    parsedRows++;
+  }
+  return parsedRows ? out : null;
+}
+
+function parseBody(text) {
+  try { return JSON.parse(text); } catch {}
+  return parseRscPayload(text) || (typeof tryParsePartialJson === 'function' ? tryParsePartialJson(text) : null);
+}
+
 function indexResponseBody(entry) {
   if (!entry) return null;
   if (entry.__provenanceIndex) return entry.__provenanceIndex;
@@ -68,10 +109,13 @@ function indexResponseBody(entry) {
   if (typeof body !== 'string' || !body.trim()) return null;
 
   let parsed = null;
+  let isRsc = false;
   try {
     parsed = JSON.parse(body);
   } catch {
-    if (typeof tryParsePartialJson === 'function') {
+    parsed = parseRscPayload(body);
+    isRsc = parsed !== null;
+    if (!parsed && typeof tryParsePartialJson === 'function') {
       parsed = tryParsePartialJson(body);
     }
   }
@@ -125,7 +169,7 @@ function indexResponseBody(entry) {
 
   walk(parsed, '', 0);
 
-  const index = { isJson: true, primitives, objectGroups, valueCounts, raw: body };
+  const index = { isJson: true, isRsc, primitives, objectGroups, valueCounts, raw: body };
   entry.__provenanceIndex = index;
   return index;
 }
@@ -377,6 +421,13 @@ function findDataSources(context, entries, options = {}) {
           details += ' · Appears in multiple response fields';
         }
 
+        // JSX text in a server component tree is hardcoded markup (button
+        // labels, headings), not data the component was given.
+        if (index.isRsc && prim.key === 'children') {
+          score = Math.min(score, 45);
+          details += ' · Static text in server-component markup, not data';
+        }
+
         const confidence = score >= 80 ? 'High' : (score >= 60 ? 'Medium' : 'Low');
         candidates.push({
           entry,
@@ -533,6 +584,7 @@ if (typeof module !== 'undefined') {
     extractNumeric,
     parseDateIso,
     indexResponseBody,
+    parseRscPayload,
     findDataSources,
   };
 }
