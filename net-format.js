@@ -42,7 +42,7 @@ function isLog(d) {
 }
 
 function isApi(d) {
-  return /json|xml|graphql/i.test(d.contentType || '');
+  return /json|xml|graphql|text\/plain/i.test(d.contentType || '');
 }
 
 // Hard, measurable signals only — no guessing that request X caused error Y.
