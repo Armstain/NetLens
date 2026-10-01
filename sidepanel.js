@@ -21,8 +21,11 @@
   let panelWindowId = null;
   let entries = [];
   let currentRevealContext = null;
+  let lastRevealSig = null;
   const restoredIds = new Set();
   const socketRows = new Map();           
+  // Placeholder rows for requests still streaming, keyed by id:startedAt.
+  const pendingRows = new Map();
   let sessions = [];
   let paused = false;
   let pulseTimer = null;
@@ -171,6 +174,7 @@
     // again at ws1 and would otherwise find the previous page's row still
     // registered — new frames would append to the old page's connection.
     socketRows.clear();
+    pendingRows.clear();
 
     if (sessions.length > 0) {
       const current = sessions[sessions.length - 1];
@@ -1324,7 +1328,7 @@
     row.className = `row ${statusClass(d)}`;
     row.dataset.hay = `${d.method} ${d.url}`.toLowerCase();
     row.dataset.err = isError(d) ? '1' : '0';
-    row.dataset.api = isApi(d) ? '1' : '0';
+    row.dataset.api = isApi(d) || d.pending ? '1' : '0';
 
     const head = document.createElement('div');
     head.className = 'row-head';
@@ -1345,12 +1349,12 @@
 
     const status = document.createElement('span');
     status.className = 'status';
-    status.textContent = d.failed || d.status === 0 ? 'ERR' : String(d.status);
+    status.textContent = d.pending && !d.status ? '…' : d.failed || d.status === 0 ? 'ERR' : String(d.status);
     if (d.statusText) status.title = d.statusText;
 
     const dur = document.createElement('span');
     dur.className = 'dur';
-    dur.textContent = fmtDuration(d.duration);
+    dur.textContent = d.pending ? 'pending' : fmtDuration(d.duration);
     if (d.responseSize) dur.title = fmtSize(d.responseSize);
 
     head.append(method, path, status, dur);
@@ -1961,11 +1965,23 @@
     const currentSession = sessions[sessions.length - 1];
 
     for (const d of batch) {
+      const key = `${d.id}:${d.startedAt}`;
+      const placeholder = pendingRows.get(key);
+      if (placeholder) {
+        if (d.pending) continue;
+        pendingRows.delete(key);
+        const el = buildRow(d);
+        placeholder.el.replaceWith(el);
+        placeholder.el = el;
+        placeholder.data = d;
+        continue;
+      }
       const el = buildRow(d);
       // Socket lifecycle events and frames fold into a connection row that
       // already exists, so there is nothing new to place in the list.
       if (!el) continue;
       const entry = { data: d, el };
+      if (d.pending) pendingRows.set(key, entry);
       entries.push(entry);
       currentSession.entries.push(entry);
       frag.appendChild(el);
@@ -1973,7 +1989,7 @@
     currentSession.containerEl.appendChild(frag);
 
     if (currentSession.pending) {
-      currentSession.pending.push(...batch);
+      currentSession.pending.push(...batch.filter((d) => !d.pending));
       scheduleDbFlush();
     }
 
@@ -2038,6 +2054,7 @@
     sessions = [];
     restoredIds.clear();
     socketRows.clear();
+    pendingRows.clear();
     if (diagBadge) diagBadge.hidden = true;
     listEl.textContent = '';
     updateCount();
@@ -2072,7 +2089,9 @@
       if (chrome.runtime.lastError || !res || !Array.isArray(res.buffer)) return;
       const currentSession = sessions[sessions.length - 1];
       if (!currentSession) return;
-      const known = new Set(currentSession.entries.map((e) => e.data && e.data.id));
+      // A placeholder's id must not count as known, or the finished entry
+      // sitting in the buffer would never replace it.
+      const known = new Set(currentSession.entries.filter((e) => e.data && !e.data.pending).map((e) => e.data.id));
       const missing = res.buffer.filter((d) => !known.has(d.id));
       if (missing.length) addEntries(missing);
     });

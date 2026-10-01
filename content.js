@@ -500,6 +500,8 @@
     if (cut) buffer = buffer.slice(cut);
   }
 
+  const pendingIds = new Set();
+
   function sendBatchToPanel(batch) {
     if (!panelLikely && Date.now() < panelRetryAt) return;
     const backOff = () => {
@@ -521,11 +523,15 @@
     const data = event.data;
     if (!data || data.__netlens !== true || !Array.isArray(data.batch)) return;
 
+    for (const d of data.batch) {
+      if (d.pending) pendingIds.add(d.id);
+      else if (pendingIds.delete(d.id)) buffer = buffer.filter((b) => !(b.pending && b.id === d.id));
+    }
     buffer.push(...data.batch);
     trimBuffer();
 
     for (const entry of data.batch) {
-      if (toastMatch(entry, toastSettings)) showToast(entry);
+      if (!entry.pending && toastMatch(entry, toastSettings)) showToast(entry);
     }
 
     sendBatchToPanel(data.batch);

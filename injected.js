@@ -350,6 +350,16 @@
     return origSetRequestHeader.apply(this, arguments);
   };
 
+  function xhrResponseHeaders(xhr) {
+    const out = {};
+    const raw = (xhr.getAllResponseHeaders && xhr.getAllResponseHeaders()) || '';
+    raw.trim().split(/[\r\n]+/).forEach((line) => {
+      const i = line.indexOf(': ');
+      if (i > 0) out[line.slice(0, i)] = line.slice(i + 2);
+    });
+    return out;
+  }
+
   XHRp.send = function (body) {
     const meta = this.__netlens;
     if (meta) {
@@ -359,6 +369,37 @@
       meta.requestBody = serializeRequestBody(body);
       meta.requestBodyTruncated = typeof body === 'string' && body.length > MAX_BODY;
       meta.credentials = this.withCredentials ? 'include' : 'same-origin';
+
+      // loadend fires only when the server closes the connection, and some
+      // servers hold even the headers back until then, so a long search would
+      // stay invisible for minutes. Send a placeholder from send() time that
+      // the panel swaps out by id on loadend; the delay spares fast requests
+      // a second message.
+      setTimeout(() => {
+        if (this.__netlens !== meta || meta.done) return;
+        try {
+          const headersIn = this.readyState >= 2;
+          enqueue({
+            id: meta.id,
+            kind: 'xhr',
+            pending: true,
+            method: meta.method,
+            url: meta.url,
+            status: this.status || null,
+            statusText: this.statusText,
+            startedAt: meta.startedAt,
+            duration: now() - meta.start,
+            requestHeaders: meta.requestHeaders,
+            requestBody: meta.requestBody,
+            requestBodyTruncated: meta.requestBodyTruncated,
+            credentials: meta.credentials,
+            responseHeaders: headersIn ? xhrResponseHeaders(this) : {},
+            responseBody: '[pending, response appears when the request finishes]',
+            responseSize: 0,
+            contentType: (headersIn && this.getResponseHeader('content-type')) || '',
+          });
+        } catch {}
+      }, 1000);
 
       // Bind loadend exactly once per XHR instance. A reused XHR (open+send
       // called again on the same object — some hand-rolled wrappers and
@@ -394,12 +435,8 @@
               responseBody = `[${this.responseType} response]`;
             }
 
-            const responseHeaders = {};
-            const raw = (this.getAllResponseHeaders && this.getAllResponseHeaders()) || '';
-            raw.trim().split(/[\r\n]+/).forEach((line) => {
-              const i = line.indexOf(': ');
-              if (i > 0) responseHeaders[line.slice(0, i)] = line.slice(i + 2);
-            });
+            const responseHeaders = xhrResponseHeaders(this);
+            m.done = true;
 
             enqueue({
               id: m.id,
