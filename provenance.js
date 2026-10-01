@@ -243,7 +243,8 @@ function findDataSources(context, entries, options = {}) {
     if (!index) continue;
 
     if (!index.isJson) {
-      if (targetText && index.raw.includes(targetText)) {
+      // Short strings ("Details", "1 room") occur by chance in any large text body.
+      if (targetText.length >= 8 && index.raw.includes(targetText)) {
         candidates.push({
           entry,
           requestId: entry.id,
@@ -272,9 +273,10 @@ function findDataSources(context, entries, options = {}) {
       let score = 0;
       let reason = null;
       let details = '';
+      let displayedValue = targetText;
 
       // Exact match
-      if (prim.strVal === targetText || (typeof prim.value === 'string' && prim.value === targetText)) {
+      if (targetText && (prim.strVal === targetText || (typeof prim.value === 'string' && prim.value === targetText))) {
         score = targetText.length > 2 ? 90 : 55;
         if (targetNum !== null && targetNum < 1000) {
           score = 65;
@@ -328,10 +330,14 @@ function findDataSources(context, entries, options = {}) {
       // Attribute match (e.g. image src, link href, data-id)
       else if (typeof prim.value === 'string' && prim.value.length > 3) {
         for (const [attrKey, attrVal] of Object.entries(targetAttributes)) {
-          if (typeof attrVal === 'string' && (attrVal === prim.value || attrVal.endsWith(prim.value) || prim.value.endsWith(attrVal))) {
+          // endsWith('') is always true, so an empty or tiny attribute
+          // (data-state="", data-i="1") would otherwise match every string.
+          if (typeof attrVal !== 'string' || attrVal.length <= 3) continue;
+          if (attrVal === prim.value || attrVal.endsWith(prim.value) || prim.value.endsWith(attrVal)) {
             score = 85;
             reason = 'attribute-match';
             details = `Attribute [${attrKey}] matched API value`;
+            displayedValue = `[${attrKey}] ${attrVal}`;
             break;
           }
         }
@@ -382,7 +388,7 @@ function findDataSources(context, entries, options = {}) {
           startedAt: entry.startedAt,
           jsonPath: prim.path,
           apiValue: prim.value,
-          displayedValue: targetText,
+          displayedValue,
           confidence,
           confidenceScore: score,
           matchReason: reason,
@@ -432,7 +438,10 @@ function findDataSources(context, entries, options = {}) {
   }
 
   // 3. Container entity fallback: if direct match found nothing, search for card entity in containerTexts
-  if (candidates.length === 0 && (targetNum !== null || normTarget.length > 0)) {
+  // Only for numbers: a price shown with markup/conversion can't be matched
+  // directly, but a text value with no match must not be "explained" by some
+  // unrelated numeric field.
+  if (candidates.length === 0 && targetNum !== null) {
     const candidateEntities = containerTexts
       .map(t => normalizeText(t).replace(/\.{3}$|…$/, '').trim())
       .filter(t => t.length >= 5 && !/^(price|view|quick view|view all|add to cart|details|book|select|more|hotels?|rooms?)$/i.test(t));
@@ -446,19 +455,23 @@ function findDataSources(context, entries, options = {}) {
       for (const entityStr of candidateEntities) {
         const matchedPrim = index.primitives.find(p => {
           if (typeof p.value !== 'string' || p.value.length < 5) return false;
+          // A value repeated in the response ("Room-Only", "BARCELONA") is a
+          // category, not this card's entity, and would anchor to whichever
+          // object happens to come first.
+          if ((index.valueCounts.get(`str:${p.value}`) || 1) > 1) return false;
           const pNorm = normalizeText(p.strVal);
-          return pNorm === entityStr || pNorm.includes(entityStr) || entityStr.includes(pNorm);
+          return pNorm === entityStr || pNorm.includes(entityStr) || (pNorm.length >= 8 && entityStr.includes(pNorm));
         });
 
         if (matchedPrim) {
           const commonPrefix = matchedPrim.parentPath;
           const relatedPrims = index.primitives.filter(p => {
-            if (p.path === matchedPrim.path) return false;
-            return commonPrefix && p.path.startsWith(commonPrefix);
+            if (p.path === matchedPrim.path || !commonPrefix) return false;
+            return p.path.startsWith(`${commonPrefix}.`) || p.path.startsWith(`${commonPrefix}[`);
           });
 
           const pricePrims = relatedPrims.filter(p => p.numVal !== null && /price|rate|amount|total|cost|fee|charge|customer|purchase|supplier|fmg/i.test(p.key));
-          const bestPrim = pricePrims.length > 0 ? pricePrims[0] : relatedPrims.find(p => p.numVal !== null);
+          const bestPrim = pricePrims.sort((a, b) => Math.abs(a.numVal - targetNum) - Math.abs(b.numVal - targetNum))[0];
 
           if (bestPrim) {
             candidates.push({

@@ -550,6 +550,63 @@ const resSsrNotFound = findDataSources(
 assert.strictEqual(resSsrNotFound.candidates.length, 0);
 assert.ok(resSsrNotFound.fallback.includes('No matching field found in embedded hydration state'));
 
+// 23. Empty text + empty/tiny attributes must not match arbitrary strings
+const devOverlayReq = {
+  id: 40,
+  kind: 'fetch',
+  method: 'POST',
+  url: 'http://localhost:3000/__nextjs_original-stack-frames',
+  status: 200,
+  contentType: 'application/json',
+  startedAt: 6000,
+  responseBody: JSON.stringify({ originalStackFrame: { methodName: 'flushSync$1', file: '' } }),
+};
+const resEmpty = findDataSources(
+  { text: '', attributes: { 'data-state': '', 'data-i': '1' } },
+  [devOverlayReq]
+);
+assert.strictEqual(resEmpty.candidates.length, 0);
+
+// 24. A real attribute still matches, and the card shows which attribute
+const resAttrLabel = findDataSources(
+  { text: '', attributes: { src: 'https://cdn.example.com/img/mbp-16.png' } },
+  [{ id: 41, kind: 'fetch', method: 'GET', url: 'https://api.example.com/p', status: 200, contentType: 'application/json', startedAt: 6100, responseBody: JSON.stringify({ image: 'https://cdn.example.com/img/mbp-16.png' }) }]
+);
+assert.strictEqual(resAttrLabel.candidates.length, 1);
+assert.strictEqual(resAttrLabel.candidates[0].matchReason, 'attribute-match');
+assert.strictEqual(resAttrLabel.candidates[0].displayedValue, '[src] https://cdn.example.com/img/mbp-16.png');
+
+// 25. Container-entity must not anchor on a repeated category value or fire for text
+const reqHotelList = {
+  id: 50,
+  kind: 'fetch',
+  method: 'POST',
+  url: 'https://api.example.com/hotels/search',
+  status: 200,
+  contentType: 'application/json',
+  startedAt: 7000,
+  responseBody: JSON.stringify({
+    results: [
+      { name: 'Hotel Bergara', address: 'Carrer De Bergara, 11', rate_type: 'Room-Only', total_amount: 34779.39, sell_price: 38257.33 },
+      { name: 'Mambo Tango', address: 'Poeta Cabanyes, 23', rate_type: 'Room-Only', total_amount: 22850.12, sell_price: 25134.00 },
+    ],
+  }),
+};
+const hotelCard = ['MAMBO TANGO', 'Double Room No Window', 'Room-Only'];
+
+// Text with no direct match: no guessed numeric field
+const resNameGuess = findDataSources({ text: 'Free WiFi Included', containerTexts: hotelCard }, [reqHotelList]);
+assert.strictEqual(resNameGuess.candidates.length, 0);
+
+// Marked-up price: anchors on the unique name, not "Room-Only", and picks the closest price field
+const resMarkedUpPrice = findDataSources(
+  { text: '৳ 25,500.00', containerTexts: ['Room-Only', ...hotelCard] },
+  [reqHotelList]
+);
+assert.strictEqual(resMarkedUpPrice.candidates.length, 1);
+assert.strictEqual(resMarkedUpPrice.candidates[0].matchReason, 'container-entity');
+assert.strictEqual(resMarkedUpPrice.candidates[0].jsonPath, 'results[1].sell_price');
+
 console.log('All provenance tests passed!');
 
 
