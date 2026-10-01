@@ -1735,6 +1735,23 @@ mark.hl {
 .reveal-matched-item:last-child {
   border-bottom: none;
 }
+.reveal-matched-link {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 120ms ease;
+}
+.reveal-matched-link:hover {
+  background: var(--surface-2);
+}
+
+.reveal-source-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
 
 .reveal-matched-left {
   flex: 0 1 auto;

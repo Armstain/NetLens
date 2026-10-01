@@ -908,7 +908,7 @@
     return div;
   }
 
-  function renderBody(container, text, truncated) {
+  function renderBody(container, text, truncated, targetPath = null) {
     container.textContent = '';
     if (truncated) {
       const note = document.createElement('div');
@@ -929,7 +929,7 @@
     if (parsed !== null && typeof parsed === 'object') {
       const tree = document.createElement('div');
       tree.className = 'jtree';
-      const root = jsonNode(null, parsed);
+      const root = jsonNode(null, parsed, false, targetPath, '');
       if (root.tagName === 'DETAILS') root.open = true;
       tree.appendChild(root);
 
@@ -1372,6 +1372,9 @@
     return row;
   }
 
+  // Field to highlight in a row's Response tab, set when Reveal jumps to it.
+  const revealTargets = new WeakMap();
+
   function buildDetail(container, d) {
     const urlLine = document.createElement('div');
     urlLine.className = 'detail-url';
@@ -1390,7 +1393,7 @@
     body.className = 'tab-body';
 
     function renderView(name, target) {
-      if (name === 'Response') renderBody(target, d.responseBody, d.truncated);
+      if (name === 'Response') renderBody(target, d.responseBody, d.truncated, revealTargets.get(d) || null);
       else if (name === 'Payload') renderBody(target, d.requestBody, false);
       else if (name === 'Headers') renderHeaders(target, d);
       else if (name === 'Decoded') renderDecoded(target, d);
@@ -2020,7 +2023,7 @@
       if (lastEntry) lastEntry.el.scrollIntoView({ block: 'nearest', behavior: 'instant' });
     }
     if (currentRevealContext && revealPanel && !revealPanel.hidden) {
-      renderRevealResult(currentRevealContext);
+      renderRevealResult(currentRevealContext, true);
     }
   }
 
@@ -2446,18 +2449,40 @@
   const diagPanelClose = document.getElementById('diagPanelClose');
   const diagBody = document.getElementById('diagBody');
 
-  function jumpToEntry(d) {
+  function jumpToEntry(d, jsonPath = null) {
     // Diagnostics passes the live object by reference; a jump requested from
     // the page's own toast only has the id that crossed the message boundary.
     const entry = entries.find((e) => e.data === d || (e.data && d && e.data.id === d.id));
     if (!entry) return false;
-    entry.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Scrolling to a row the filter hides is a silent no-op.
+    if (entry.el.style.display === 'none') {
+      filterEl.value = '';
+      setScope('all');
+    }
+    // Slide panels sit above the list and would cover the row being shown.
+    let closing = false;
+    for (const p of slidePanels) {
+      if (!p.el.hidden) { p.close(); closing = true; }
+    }
+    if (jsonPath) revealTargets.set(entry.data, jsonPath);
     if (!entry.el.classList.contains('open')) {
       const head = entry.el.querySelector('.row-head');
       if (head) head.click();
     }
-    entry.el.classList.add('jump-flash');
-    setTimeout(() => entry.el.classList.remove('jump-flash'), 900);
+    if (jsonPath) {
+      const responseTab = Array.from(entry.el.querySelectorAll('.tabs .tab')).find((b) => b.textContent === 'Response');
+      if (responseTab) responseTab.click();
+    }
+    setTimeout(() => {
+      const match = entry.el.querySelector('.j-match');
+      (match || entry.el).scrollIntoView({ block: 'center', behavior: 'smooth' });
+      entry.el.classList.add('jump-flash');
+      setTimeout(() => entry.el.classList.remove('jump-flash'), 900);
+      if (match) {
+        match.classList.add('j-match-flash');
+        setTimeout(() => match.classList.remove('j-match-flash'), 1500);
+      }
+    }, closing ? 200 : 0);
     return true;
   }
 
@@ -3006,7 +3031,31 @@
   const revealPickBtn = document.getElementById('revealPickBtn');
   const revealBodyEl = document.getElementById('revealBody');
 
-  function renderCandidateCard(candidate, isPrimary) {
+  // Plain-language answer to "where did this value come from, and how did it
+  // get here?", shown under each card's request line.
+  function revealSourceNote({ entry, sourceType }, isSsr) {
+    const note = document.createElement('div');
+    note.className = 'reveal-source-note';
+    let where;
+    if (isSsr) {
+      where = "Server-rendered: embedded as hydration data in the page's initial HTML. No request fetched it after load.";
+    } else if (sourceType === 'websocket' || (entry && entry.kind === 'wsframe')) {
+      where = 'WebSocket message the page received after load.';
+    } else {
+      const index = entry ? indexResponseBody(entry) : null;
+      if (index && index.isRsc) {
+        where = "Next.js Server Component payload: rendered on the server, then fetched by the browser's client router (this request).";
+      } else if (index && !index.isJson) {
+        where = 'Browser request after page load. Found as plain text in its response, so no exact field path.';
+      } else {
+        where = 'Browser request after page load (client-side fetch/XHR).';
+      }
+    }
+    note.textContent = where;
+    return note;
+  }
+
+  function renderCandidateCard(candidate, isPrimary, live) {
     const card = document.createElement('div');
     const isSsr = candidate.sourceType === 'ssr' || (candidate.entry && candidate.entry.kind === 'ssr');
     card.className = isPrimary
@@ -3038,6 +3087,7 @@
     head.append(method, status, urlSpan);
     addCopyButton(head, candidate.url, isSsr ? 'Copy source name' : 'Copy URL');
     card.appendChild(head);
+    card.appendChild(revealSourceNote(candidate, isSsr));
 
     const metaRow = document.createElement('div');
     metaRow.className = 'reveal-meta-row';
@@ -3151,7 +3201,7 @@
       viewReqBtn.className = 'mini-btn';
       viewReqBtn.textContent = 'View in Request List';
       viewReqBtn.addEventListener('click', () => {
-        jumpToEntry(candidate.entry);
+        jumpToEntry(candidate.entry, candidate.jsonPath);
       });
       actions.appendChild(viewReqBtn);
     }
@@ -3186,7 +3236,7 @@
 
         requestAnimationFrame(() => {
           const matchEl = treeWrap.querySelector('.j-match');
-          if (matchEl) {
+          if (matchEl && !live) {
             matchEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
             matchEl.classList.add('j-match-flash');
             setTimeout(() => matchEl.classList.remove('j-match-flash'), 1500);
@@ -3228,6 +3278,7 @@
     head.append(method, status, urlSpan);
     addCopyButton(head, group.url, isSsr ? 'Copy source name' : 'Copy URL');
     card.appendChild(head);
+    card.appendChild(revealSourceNote(group, isSsr));
 
     const metaRow = document.createElement('div');
     metaRow.className = 'reveal-meta-row';
@@ -3261,10 +3312,15 @@
       right.className = 'reveal-matched-right';
       const pathVal = document.createElement('code');
       pathVal.className = 'raw reveal-matched-path';
-      pathVal.textContent = field.jsonPath;
+      pathVal.textContent = field.jsonPath || '(plain text, no field path)';
       right.appendChild(pathVal);
 
       item.append(left, arrow, right);
+      if (!isSsr) {
+        item.classList.add('reveal-matched-link');
+        item.title = `API value: ${field.apiValue} (click to show it in the request list)`;
+        item.addEventListener('click', () => jumpToEntry(group.entry, field.jsonPath));
+      }
       fieldList.appendChild(item);
     }
     card.appendChild(fieldList);
@@ -3278,7 +3334,7 @@
       viewReqBtn.className = 'mini-btn';
       viewReqBtn.textContent = 'View in Request List';
       viewReqBtn.addEventListener('click', () => {
-        jumpToEntry(group.entry);
+        jumpToEntry(group.entry, group.matchedFields?.[0]?.jsonPath);
       });
       actions.appendChild(viewReqBtn);
     }
@@ -3301,9 +3357,25 @@
     return card;
   }
 
-  function renderRevealResult(context) {
+  function revealSignature(result) {
+    const list = result.isContainer ? (result.contributingRequests || []) : (result.candidates || []);
+    return list.map((c) => `${c.requestId}|${c.jsonPath || ''}|${c.matchCount || ''}`).join(',') + `|${result.fallback || ''}`;
+  }
+
+  // live = re-run because new requests arrived. Busy pages (dev servers, polling)
+  // send batches constantly, so a live re-run must not rebuild an unchanged
+  // result (it collapses what the user expanded) or scroll to the match again.
+  function renderRevealResult(context, live = false) {
     if (!revealBodyEl) return;
+    const result = findDataSources(context, entries);
+    const sig = revealSignature(result);
+    if (live && context === currentRevealContext && sig === lastRevealSig) return;
     currentRevealContext = context;
+    lastRevealSig = sig;
+    if (live && revealPanel) {
+      const keepScroll = revealPanel.scrollTop;
+      requestAnimationFrame(() => { revealPanel.scrollTop = keepScroll; });
+    }
     revealBodyEl.textContent = '';
 
     const header = document.createElement('div');
@@ -3321,8 +3393,6 @@
 
     header.append(tagBadge, textPreview);
     revealBodyEl.appendChild(header);
-
-    const result = findDataSources(context, entries);
 
     if (result.isContainer) {
       if (result.contributingRequests && result.contributingRequests.length > 0) {
@@ -3356,7 +3426,7 @@
     const { candidates, fallback } = result;
 
     if (candidates.length > 0) {
-      revealBodyEl.appendChild(renderCandidateCard(candidates[0], true));
+      revealBodyEl.appendChild(renderCandidateCard(candidates[0], true, live));
 
       if (candidates.length > 1) {
         const altWrap = document.createElement('div');
