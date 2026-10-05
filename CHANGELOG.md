@@ -1,5 +1,14 @@
 # Changelog
 
+## 6.8
+
+- Reveal API Source: opening a match now jumps to the matched field in the response and highlights it, clearing the search/scope filter if it would hide the row.
+- Reveal results explain where a value came from (network request, WebSocket frame, or server-rendered payload) and stay stable while new traffic arrives, keeping expanded nodes and scroll position.
+- Next.js App Router RSC flight responses (`?_rsc=`) are now parsed into structured data, so values they deliver trace back to their source.
+- Long-running XHRs now appear as pending rows as soon as they start, instead of only after they finish.
+- Fixed `text/plain` responses being excluded from the API filter.
+- Fixed false Reveal matches from empty attributes, very short text, and repeated entities.
+
 ## 6.7
 
 - Fixed the side panel jumping to a background tab whenever that tab logged network activity; it now only follows a Reveal or Inspect pick, and only within its own window.
