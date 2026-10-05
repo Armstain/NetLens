@@ -1393,7 +1393,7 @@
     body.className = 'tab-body';
 
     function renderView(name, target) {
-      if (name === 'Response') renderBody(target, d.responseBody, d.truncated, revealTargets.get(d) || null);
+      if (name === 'Response') renderBody(target, d.responseBody, d.truncated, revealTargets.get(d));
       else if (name === 'Payload') renderBody(target, d.requestBody, false);
       else if (name === 'Headers') renderHeaders(target, d);
       else if (name === 'Decoded') renderDecoded(target, d);
