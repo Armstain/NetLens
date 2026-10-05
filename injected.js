@@ -360,6 +360,20 @@
     return out;
   }
 
+  function xhrRequestFields(m) {
+    return {
+      id: m.id,
+      kind: 'xhr',
+      method: m.method,
+      url: m.url,
+      startedAt: m.startedAt,
+      requestHeaders: m.requestHeaders,
+      requestBody: m.requestBody,
+      requestBodyTruncated: m.requestBodyTruncated,
+      credentials: m.credentials,
+    };
+  }
+
   XHRp.send = function (body) {
     const meta = this.__netlens;
     if (meta) {
@@ -380,22 +394,13 @@
         try {
           const headersIn = this.readyState >= 2;
           enqueue({
-            id: meta.id,
-            kind: 'xhr',
+            ...xhrRequestFields(meta),
             pending: true,
-            method: meta.method,
-            url: meta.url,
             status: this.status || null,
             statusText: this.statusText,
-            startedAt: meta.startedAt,
             duration: now() - meta.start,
-            requestHeaders: meta.requestHeaders,
-            requestBody: meta.requestBody,
-            requestBodyTruncated: meta.requestBodyTruncated,
-            credentials: meta.credentials,
             responseHeaders: headersIn ? xhrResponseHeaders(this) : {},
             responseBody: '[pending, response appears when the request finishes]',
-            responseSize: 0,
             contentType: (headersIn && this.getResponseHeader('content-type')) || '',
           });
         } catch {}
@@ -439,18 +444,10 @@
             m.done = true;
 
             enqueue({
-              id: m.id,
-              kind: 'xhr',
-              method: m.method,
-              url: m.url,
+              ...xhrRequestFields(m),
               status: this.status,
               statusText: this.statusText,
-              startedAt: m.startedAt,
               duration,
-              requestHeaders: m.requestHeaders,
-              requestBody: m.requestBody,
-              requestBodyTruncated: m.requestBodyTruncated,
-              credentials: m.credentials,
               responseHeaders,
               responseBody,
               responseSize,
