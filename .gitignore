@@ -4,3 +4,4 @@ node_modules/
 package-lock.json
 NetLens.zip
 
+web-ext-artifacts/
