@@ -435,6 +435,22 @@
     });
   }
 
+  const maxBodyEl = document.getElementById('setMaxBody');
+  const maxBodyWarnEl = document.getElementById('setMaxBodyWarn');
+  if (maxBodyEl) {
+    const showWarn = () => { maxBodyWarnEl.hidden = Number(maxBodyEl.value) <= 200 * 1024; };
+    try {
+      chrome.storage.local.get(['netlensMaxBody'], (res) => {
+        if (res && res.netlensMaxBody) maxBodyEl.value = String(res.netlensMaxBody);
+        showWarn();
+      });
+    } catch {}
+    maxBodyEl.addEventListener('change', () => {
+      showWarn();
+      chrome.storage.local.set({ netlensMaxBody: Number(maxBodyEl.value) });
+    });
+  }
+
   setEls.enabled.addEventListener('change', () => saveSettings({ enabled: setEls.enabled.checked }));
   setEls.gqlMutationsOnly.addEventListener('change', () => saveSettings({ gqlMutationsOnly: setEls.gqlMutationsOnly.checked }));
   setEls.dedupe.addEventListener('change', () => saveSettings({ dedupe: setEls.dedupe.checked }));
@@ -484,6 +500,11 @@
     if (captureAllLogsEl) {
       captureAllLogsEl.checked = true;
       chrome.storage.local.set({ netlensCaptureAllLogs: true });
+    }
+    if (maxBodyEl) {
+      maxBodyEl.value = '204800';
+      maxBodyWarnEl.hidden = true;
+      chrome.storage.local.set({ netlensMaxBody: 204800 });
     }
   });
 
@@ -913,7 +934,7 @@
     if (truncated) {
       const note = document.createElement('div');
       note.className = 'trunc-note';
-      note.textContent = '⚠ Body truncated at 200KB';
+      note.textContent = '⚠ Body truncated (capture limit reached, see Settings)';
       container.appendChild(note);
     }
     if (text == null || text === '') {
@@ -1755,7 +1776,7 @@
       inner.appendChild(replayNote(`⚠ Original body was ${d.requestBody} — not replayable, type a replacement.`));
     }
     if (d.requestBodyTruncated) {
-      inner.appendChild(replayNote('⚠ Captured body hit the 200KB cap and is clipped — sending it will not match the original.'));
+      inner.appendChild(replayNote('⚠ Captured body hit the capture limit and is clipped — sending it will not match the original.'));
     }
     inner.append(actions, out);
     container.appendChild(wrap);

@@ -159,6 +159,20 @@
         </label>
       </div>
 
+      <div class="set-group set-global">
+        <div class="set-label-row">
+          <div class="set-label">Body capture limit</div>
+        </div>
+        <label class="set-row">
+          <select id="setMaxBody">
+            <option value="204800">200 KB (default)</option>
+            <option value="1048576">1 MB</option>
+            <option value="5242880">5 MB</option>
+          </select>
+        </label>
+        <div class="trunc-note" id="setMaxBodyWarn" hidden>⚠ Larger limits use more memory and can slow the panel on big responses. Applies to new requests.</div>
+      </div>
+
       <label class="set-row set-master">
         <input type="checkbox" id="setEnabled" />
         <span>Enable page toasts</span>

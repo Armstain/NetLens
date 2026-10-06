@@ -37,8 +37,13 @@
     try { window.postMessage({ __netlens_config: true, captureAllLogs }, '*'); } catch {}
   }
 
+  function syncMaxBody(maxBody) {
+    try { window.postMessage({ __netlens_config: true, maxBody }, '*'); } catch {}
+  }
+
   try {
-    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts', 'netlensCaptureAllLogs'], (res) => {
+    chrome.storage.local.get(['netlensToastSettings', 'netlensShortcuts', 'netlensCaptureAllLogs', 'netlensMaxBody'], (res) => {
+      if (res && res.netlensMaxBody) syncMaxBody(Number(res.netlensMaxBody));
       if (res && res.netlensToastSettings) {
         toastSettings = normalizeToastSettings(res.netlensToastSettings);
         applyToastPosition();
@@ -59,6 +64,9 @@
       }
       if (changes.netlensShortcuts) {
         shortcutSettings = normalizeShortcuts(changes.netlensShortcuts.newValue);
+      }
+      if (changes.netlensMaxBody) {
+        syncMaxBody(Number(changes.netlensMaxBody.newValue) || 200 * 1024);
       }
       if (changes.netlensCaptureAllLogs) {
         syncLogConfig(Boolean(changes.netlensCaptureAllLogs.newValue));

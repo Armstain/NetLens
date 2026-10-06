@@ -3,7 +3,13 @@
   if (window.__netlens_installed) return;
   window.__netlens_installed = true;
 
-  const MAX_BODY = 200 * 1024; // 200KB cap per body
+  // Page scripts can post __netlens_config too, so clamp to what the panel offers.
+  const clampMaxBody = (n) => Math.min(Math.max(Number(n) || 0, 1024), 5 * 1024 * 1024);
+  let MAX_BODY = 200 * 1024;
+  try {
+    const saved = localStorage.getItem('__netlens_max_body');
+    if (saved !== null) MAX_BODY = clampMaxBody(saved);
+  } catch {}
   const FLUSH_MS = 100;
   // A page can fire thousands of requests inside one flush window. Sending
   // them as a single postMessage means structured-cloning every body at once,
@@ -150,6 +156,10 @@
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data) return;
+    if (event.data.__netlens_config && event.data.maxBody > 0) {
+      MAX_BODY = clampMaxBody(event.data.maxBody);
+      try { localStorage.setItem('__netlens_max_body', String(MAX_BODY)); } catch {}
+    }
     if (event.data.__netlens_config && event.data.captureAllLogs !== undefined) {
       captureAllLogs = Boolean(event.data.captureAllLogs);
       try { localStorage.setItem('__netlens_capture_all_logs', String(captureAllLogs)); } catch {}

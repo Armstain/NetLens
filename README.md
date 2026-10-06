@@ -14,7 +14,7 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 
 - Patches `fetch` and `XMLHttpRequest` in the page's main world at `document_start`, so nothing fired during page load is missed
 - Keeps a 200-entry ring buffer per tab in the content script — open the panel *after* the page loads and the load-time calls are still there (the thing DevTools can't do)
-- Batches captures every 100ms; bodies are capped at 200KB and only JSON-parsed when you expand a row
+- Batches captures every 100ms; bodies are capped at 200KB by default (1MB or 5MB in Settings) and only JSON-parsed when you expand a row
 - Status rail on every row: emerald = 2xx, amber = 3xx, red = 4xx/5xx/failed
 - Filter by URL/method/headers/body (always searched, no toggle) — plain text or a `/regex/` pattern — plus errors-only, pause, clear. Filter checkboxes persist across sessions
 - Copy any request as a `curl` command or a `fetch()` snippet
