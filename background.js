@@ -1,16 +1,26 @@
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch(() => {});
+if (chrome.sidePanel) {
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch(() => {});
+} else {
+  chrome.action.onClicked.addListener(() => { browser.sidebarAction.toggle(); });
+}
+
+function openPanel(tabId) {
+  const opening = chrome.sidePanel ? chrome.sidePanel.open({ tabId }) : browser.sidebarAction.open();
+  opening.catch(() => {});
+}
 
 // A page's cross-origin stylesheets are unreadable from the content script
 // (touching .cssRules throws SecurityError), so fetch them here where
 // host_permissions applies, and let the content script re-parse the text.
 // A toast's "Locate" click reaches here relayed through content.js's message,
 // so it may not carry a live user gesture by the time it does — best effort,
-// not guaranteed by Chrome to succeed.
+// not guaranteed by Chrome to succeed. Firefox always refuses it here, so the
+// pending-action fallback in sidepanel.js covers it there.
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!msg || msg.type !== 'netlens:openPanel' || !sender.tab) return;
-  chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
+  openPanel(sender.tab.id);
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

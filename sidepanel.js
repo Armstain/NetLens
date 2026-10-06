@@ -3744,6 +3744,10 @@
       if (e.key === 'Escape' && !decoderPanel.hidden) closePanel();
     });
 
+    // Firefox (the only browser defining `browser`) ignores manifest sandbox
+    // pages, so runCustomFunction has nowhere to eval.
+    if (typeof browser !== 'undefined') document.getElementById('decoderTypeFunction').hidden = true;
+
     decoderForm.querySelectorAll('input[name="decoderType"]').forEach((radio) => {
       radio.addEventListener('change', () => {
         const isFn = decoderForm.decoderType.value === 'function';
