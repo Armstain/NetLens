@@ -1026,7 +1026,9 @@ mark.hl {
    flipping the master switch on. */
 .settings-body.off .set-group,
 .settings-body.off .set-row:not(.set-master) { opacity: 0.5; }
-.settings-body.off .set-group.set-shortcuts { opacity: 1; }
+.settings-body.off .set-group.set-shortcuts,
+.settings-body.off .set-group.set-global,
+.settings-body.off .set-group.set-global .set-row { opacity: 1; }
 .set-shortcuts select { flex: 1; min-width: 0; cursor: pointer; }
 .set-shortcut-chrome-row { margin-top: 6px; }
 
