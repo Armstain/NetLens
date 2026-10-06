@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.9
+
+- Configurable body capture limit in Settings: 200 KB (default), 1 MB, or 5 MB per request/response body, with a warning about memory use and panel speed at the larger sizes. Applies to new requests without a reload.
+- Firefox support: sidebar panel, background scripts, and Gecko settings in the manifest.
+- Fixed the Console logs and Body capture limit settings being dimmed when page toasts are off.
+- Fixed the 16/48/128 toolbar icons being non-square.
+
 ## 6.8
 
 - Reveal API Source: opening a match now jumps to the matched field in the response and highlights it, clearing the search/scope filter if it would hide the row.
