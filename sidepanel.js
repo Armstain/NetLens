@@ -457,17 +457,28 @@
     port: document.getElementById('setMcpPort'),
     replay: document.getElementById('setMcpReplay'),
     status: document.getElementById('setMcpStatus'),
+    servers: document.getElementById('setMcpServers'),
   };
   if (mcpEls.enabled) {
     const MCP_STATUS_TEXT = {
       off: '',
       'no-token': 'paste the token below',
-      connecting: 'connecting…',
-      waiting: 'waiting for the server — is your AI client running?',
+      waiting: 'waiting for a server — is your AI client running?',
       'auth-failed': 'token mismatch — copy it again',
       connected: '● connected',
     };
-    const showMcpStatus = (status) => { mcpEls.status.textContent = MCP_STATUS_TEXT[status] || ''; };
+    const showMcpStatus = ({ status, servers }) => {
+      mcpEls.status.textContent = status === 'connected'
+        ? `● ${servers.length} connected`
+        : MCP_STATUS_TEXT[status] || '';
+      mcpEls.servers.replaceChildren(...(servers || []).map((sv) => {
+        const row = document.createElement('div');
+        row.className = 'set-hint-inline';
+        row.title = sv.cwd || '';
+        row.textContent = `${sv.client || 'AI client'} · ${sv.project || '?'} · :${sv.port}`;
+        return row;
+      }));
+    };
     let mcpSettings = {};
     const saveMcp = () => {
       mcpSettings = {
@@ -487,11 +498,11 @@
         mcpEls.replay.checked = !!mcpSettings.allowReplay;
       });
       chrome.runtime.sendMessage({ type: 'netlens:mcp:getStatus' }, (res) => {
-        if (!chrome.runtime.lastError && res) showMcpStatus(res.status);
+        if (!chrome.runtime.lastError && res) showMcpStatus(res);
       });
     } catch {}
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg && msg.type === 'netlens:mcp:status') showMcpStatus(msg.status);
+      if (msg && msg.type === 'netlens:mcp:status') showMcpStatus(msg);
     });
     mcpEls.enabled.addEventListener('change', saveMcp);
     mcpEls.replay.addEventListener('change', saveMcp);

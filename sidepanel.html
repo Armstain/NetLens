@@ -182,12 +182,13 @@
           <input type="checkbox" id="setMcpEnabled" />
           <span>Connect to the NetLens MCP server <span class="set-hint-inline" id="setMcpStatus"></span></span>
         </label>
+        <div id="setMcpServers"></div>
         <label class="set-field set-field-wide">
           <span>Token</span>
           <input type="password" id="setMcpToken" placeholder="node mcp/server.js --token" autocomplete="off" spellcheck="false" />
         </label>
         <label class="set-field">
-          <span>Port</span>
+          <span>Base port</span>
           <input type="number" id="setMcpPort" min="1024" max="65535" step="1" />
         </label>
         <label class="set-row">
