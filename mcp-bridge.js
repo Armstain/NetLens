@@ -5,6 +5,9 @@
 // WebSocket on 127.0.0.1, and answers the server's calls by asking the
 // tab's content script for its ring buffer, exactly as the side panel does.
 //
+// Every AI client runs its own server copy, each on the first free port of a
+// small span, so the extension keeps one socket per live server.
+//
 // Off by default. When on, both ends prove they hold the same token (shown
 // by `node mcp/server.js --token`) before anything is sent, so a stray
 // process on the port gets nothing.
@@ -12,18 +15,20 @@
 const MCP_KEY = 'netlensMcp';
 const MCP_ALARM = 'netlens-mcp-reconnect';
 const MCP_DEFAULTS = { enabled: false, port: 17373, token: '', allowReplay: false };
+const MCP_PORT_SPAN = 5; // keep in sync with PORT_SPAN in mcp/server.js
 const MCP_PING_MS = 20000; // keeps Chrome's MV3 service worker alive while connected
+const MCP_RETRY_MIN_MS = 3000;
+const MCP_RETRY_MAX_MS = 15000;
 
-let mcpWs = null;
-let mcpStatus = 'off';
+const mcpConns = new Map(); // port -> { ws, ready, authFailed, info, ping }
+let mcpOff = 'off';         // 'off' | 'no-token' | null while running
 let mcpRetryTimer = null;
-let mcpRetryMs = 2000;
-let mcpPingTimer = null;
+let mcpRetryMs = MCP_RETRY_MIN_MS;
 let mcpConnecting = false;
 
 function mcpNormalize(raw) {
   const s = { ...MCP_DEFAULTS, ...(raw || {}) };
-  s.port = Math.min(65535, Math.max(1024, Number(s.port) || MCP_DEFAULTS.port));
+  s.port = Math.min(65535 - MCP_PORT_SPAN, Math.max(1024, Number(s.port) || MCP_DEFAULTS.port));
   s.token = String(s.token || '').trim();
   s.enabled = !!s.enabled;
   s.allowReplay = !!s.allowReplay;
@@ -35,10 +40,22 @@ async function mcpSettings() {
   return mcpNormalize(res && res[MCP_KEY]);
 }
 
-function mcpSetStatus(status) {
-  mcpStatus = status;
+function mcpState() {
+  const servers = [...mcpConns]
+    .filter(([, c]) => c.ready)
+    .map(([port, c]) => ({ ...c.info, port }));
+  let status = mcpOff;
+  if (!status) {
+    if (servers.length) status = 'connected';
+    else if ([...mcpConns.values()].some((c) => c.authFailed)) status = 'auth-failed';
+    else status = 'waiting';
+  }
+  return { status, servers };
+}
+
+function mcpPublish() {
   try {
-    chrome.runtime.sendMessage({ type: 'netlens:mcp:status', status }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'netlens:mcp:status', ...mcpState() }).catch(() => {});
   } catch {}
 }
 
@@ -56,44 +73,49 @@ function mcpNonce() {
 function mcpScheduleRetry() {
   clearTimeout(mcpRetryTimer);
   mcpRetryTimer = setTimeout(mcpConnect, mcpRetryMs);
-  // Back off while the server isn't running; the alarm is the floor once the
-  // worker has been put to sleep and this timer with it.
-  mcpRetryMs = Math.min(mcpRetryMs * 2, 30000);
+  // Keep scanning even while connected: a second AI client may start its own
+  // server later. The alarm is the floor once the worker has been put to
+  // sleep and this timer with it.
+  mcpRetryMs = Math.min(mcpRetryMs * 2, MCP_RETRY_MAX_MS);
 }
 
 function mcpDisconnect() {
   clearTimeout(mcpRetryTimer);
-  clearInterval(mcpPingTimer);
-  if (mcpWs) {
-    const ws = mcpWs;
-    mcpWs = null;
-    try { ws.close(1000, 'disabled'); } catch {}
+  for (const conn of mcpConns.values()) {
+    clearInterval(conn.ping);
+    try { conn.ws.close(1000, 'disabled'); } catch {}
   }
+  mcpConns.clear();
 }
 
 async function mcpConnect() {
-  if (mcpWs || mcpConnecting) return;
+  if (mcpConnecting) return;
   mcpConnecting = true;
   let s;
   try { s = await mcpSettings(); } finally { mcpConnecting = false; }
-  if (mcpWs) return;
-  if (!s.enabled) { mcpSetStatus('off'); return; }
-  if (!s.token) { mcpSetStatus('no-token'); return; }
+  if (!s.enabled) { mcpOff = 'off'; mcpPublish(); return; }
+  if (!s.token) { mcpOff = 'no-token'; mcpPublish(); return; }
+  mcpOff = null;
 
+  for (let p = s.port; p < s.port + MCP_PORT_SPAN; p++) {
+    if (!mcpConns.has(p)) mcpOpen(p, s);
+  }
+  mcpPublish();
+  mcpScheduleRetry();
+}
+
+function mcpOpen(port, s) {
   let ws;
   try {
-    ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
+    ws = new WebSocket(`ws://127.0.0.1:${port}`);
   } catch {
-    mcpSetStatus('waiting');
-    mcpScheduleRetry();
     return;
   }
-  mcpWs = ws;
-  if (mcpStatus !== 'waiting') mcpSetStatus('connecting');
+  const conn = { ws, ready: false, authFailed: false, info: null, ping: null };
+  mcpConns.set(port, conn);
 
   const clientNonce = mcpNonce();
   let stage = 'hello';
-  let authFailed = false;
   // Message handlers await Web Crypto, so run them one at a time in order.
   let queue = Promise.resolve();
 
@@ -109,7 +131,7 @@ async function mcpConnect() {
       try { msg = JSON.parse(event.data); } catch { return; }
       if (stage === 'hello') {
         if (msg.type !== 'hello' || msg.proof !== await mcpHmac(s.token, `server:${clientNonce}`)) {
-          authFailed = true;
+          conn.authFailed = true;
           ws.close(4001, 'server proof mismatch');
           return;
         }
@@ -120,12 +142,19 @@ async function mcpConnect() {
       if (stage === 'auth') {
         if (msg.type !== 'ready') return;
         stage = 'ready';
-        mcpRetryMs = 2000;
-        mcpSetStatus('connected');
-        clearInterval(mcpPingTimer);
-        mcpPingTimer = setInterval(() => {
+        conn.ready = true;
+        conn.info = msg.info || {};
+        mcpRetryMs = MCP_RETRY_MIN_MS;
+        mcpPublish();
+        conn.ping = setInterval(() => {
           try { ws.send('{"type":"ping"}'); } catch {}
         }, MCP_PING_MS);
+        return;
+      }
+      if ((msg.type === 'info' || msg.type === 'pong') && msg.info) {
+        const changed = JSON.stringify(msg.info) !== JSON.stringify(conn.info);
+        conn.info = msg.info;
+        if (changed) mcpPublish();
         return;
       }
       if (msg.type === 'call') {
@@ -141,17 +170,13 @@ async function mcpConnect() {
   });
 
   ws.addEventListener('close', (event) => {
-    clearInterval(mcpPingTimer);
-    if (mcpWs !== ws) return; // disabled or replaced on purpose
-    mcpWs = null;
-    if (authFailed || event.code === 4001) {
-      // Retrying with the same wrong token would just fail again; wait for
-      // the token to change (storage listener) or the next alarm.
-      mcpSetStatus('auth-failed');
-      return;
-    }
-    mcpSetStatus('waiting');
-    mcpScheduleRetry();
+    clearInterval(conn.ping);
+    if (mcpConns.get(port) !== conn) return; // disabled or replaced on purpose
+    conn.ready = false;
+    // A token mismatch would just fail again, so keep the entry (which stops
+    // the rescan) until the token changes and everything restarts.
+    if (!(conn.authFailed || event.code === 4001)) mcpConns.delete(port);
+    mcpPublish();
   });
 }
 
@@ -221,15 +246,16 @@ async function mcpSync() {
   } else {
     chrome.alarms.clear(MCP_ALARM);
     mcpDisconnect();
-    mcpSetStatus('off');
+    mcpOff = 'off';
+    mcpPublish();
   }
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[MCP_KEY]) return;
-  // Port or token changed: drop the old connection and start over.
+  // Port or token changed: drop the old connections and start over.
   mcpDisconnect();
-  mcpRetryMs = 2000;
+  mcpRetryMs = MCP_RETRY_MIN_MS;
   mcpSync();
 });
 
@@ -239,7 +265,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== 'netlens:mcp:getStatus') return;
-  sendResponse({ status: mcpStatus });
+  sendResponse(mcpState());
 });
 
 mcpSync();

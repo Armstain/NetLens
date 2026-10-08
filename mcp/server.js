@@ -21,7 +21,11 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const lib = require('./lib.js');
 const { version } = require('./package.json');
 
-const PORT = Number(process.env.NETLENS_MCP_PORT) || 17373;
+const BASE_PORT = Number(process.env.NETLENS_MCP_PORT) || 17373;
+// Each AI client spawns its own copy of this server. Instead of fighting over
+// one port, a copy takes the first free one in this span; the extension dials
+// every port in it. Keep in sync with MCP_PORT_SPAN in mcp-bridge.js.
+const PORT_SPAN = 5;
 const HOME = process.env.NETLENS_MCP_HOME || path.join(os.homedir(), '.netlens-mcp');
 const TOKEN_FILE = path.join(HOME, 'token');
 const CALL_TIMEOUT_MS = 35000; // the page-side replay gives up at 30s
@@ -54,29 +58,47 @@ if (process.argv.includes('--token')) {
 
 let ext = null;          // the authenticated extension socket, if any
 let extInfo = null;      // what it said about itself in its hello
-let bindError = null;    // why the port isn't ours, if it isn't
+let bindError = null;    // why we hold no port, if we don't
+let port = null;         // the port we actually hold
 let nextCallId = 0;
 const pending = new Map();
 
-function listen() {
+// Shown in the extension's settings so the user can tell servers apart.
+function serverInfo() {
+  const client = mcp.server.getClientVersion();
+  return {
+    client: client ? client.name : null,
+    project: path.basename(process.cwd()),
+    cwd: process.cwd(),
+    port,
+    pid: process.pid,
+  };
+}
+
+function listen(offset = 0) {
+  if (offset >= PORT_SPAN) {
+    bindError = `Ports ${BASE_PORT}-${BASE_PORT + PORT_SPAN - 1} are all held by other processes. Close an AI client that has NetLens MCP running, or set NETLENS_MCP_PORT to move the range (and the same base port in NetLens settings).`;
+    log(bindError);
+    setTimeout(listen, BIND_RETRY_MS).unref();
+    return;
+  }
+  const p = BASE_PORT + offset;
   const wss = new WebSocketServer({
     host: '127.0.0.1',
-    port: PORT,
+    port: p,
     maxPayload: 64 * 1024 * 1024,
     verifyClient: ({ origin }) => lib.originAllowed(origin),
   });
   wss.on('listening', () => {
+    port = p;
     bindError = null;
-    log(`waiting for the NetLens extension on ws://127.0.0.1:${PORT}`);
+    log(`waiting for the NetLens extension on ws://127.0.0.1:${p}`);
   });
   wss.on('error', (err) => {
-    // Another MCP client already started its own copy of this server. Keep
-    // serving MCP and take the port over once that copy exits.
-    bindError = err.code === 'EADDRINUSE'
-      ? `Port ${PORT} is held by another process (probably another NetLens MCP server started by a different AI client). Close that client, or set NETLENS_MCP_PORT here and the same port in NetLens settings.`
-      : `Could not listen on port ${PORT}: ${err.message}`;
-    log(bindError);
     wss.close();
+    if (err.code === 'EADDRINUSE') return listen(offset + 1);
+    bindError = `Could not listen on port ${p}: ${err.message}`;
+    log(bindError);
     setTimeout(listen, BIND_RETRY_MS).unref();
   });
   wss.on('connection', onConnection);
@@ -109,11 +131,11 @@ function onConnection(ws) {
       // old socket notices it is dead.
       if (ext && ext !== ws) ext.close(4002, 'replaced');
       ext = ws;
-      ws.send(JSON.stringify({ type: 'ready' }));
+      ws.send(JSON.stringify({ type: 'ready', info: serverInfo() }));
       log(`extension connected (NetLens ${extInfo.version || '?'})`);
       return;
     }
-    if (msg.type === 'ping') { ws.send('{"type":"pong"}'); return; }
+    if (msg.type === 'ping') { ws.send(JSON.stringify({ type: 'pong', info: serverInfo() })); return; }
     if (msg.type === 'result' && pending.has(msg.id)) {
       const p = pending.get(msg.id);
       pending.delete(msg.id);
@@ -142,7 +164,7 @@ function notConnectedMessage() {
     'The NetLens extension is not connected.',
     'In the browser: open the NetLens side panel → Settings (gear) → "AI access (MCP)",',
     `turn it on, and paste this server's token (run \`node ${path.join(__dirname, 'server.js')} --token\`).`,
-    `The port there must be ${PORT}. The extension retries about every 30 seconds.`,
+    `The base port there must be ${BASE_PORT} (this server listens on ${port || 'no port yet'}). The extension retries every few seconds.`,
   ].join(' ');
 }
 
@@ -289,11 +311,14 @@ tool('netlens_status', {
   inputSchema: {},
   annotations: { readOnlyHint: true },
 }, async () => (ext
-  ? { connected: true, extensionVersion: extInfo && extInfo.version, browser: extInfo && extInfo.browser, port: PORT }
-  : { connected: false, port: PORT, help: notConnectedMessage() }));
+  ? { connected: true, extensionVersion: extInfo && extInfo.version, browser: extInfo && extInfo.browser, port }
+  : { connected: false, port, help: notConnectedMessage() }));
 
 // -------------------------------------------------------------------- main
 
+mcp.server.oninitialized = () => {
+  if (ext) ext.send(JSON.stringify({ type: 'info', info: serverInfo() }));
+};
 listen();
 mcp.connect(new StdioServerTransport()).catch((err) => {
   log('failed to start MCP transport:', err);
