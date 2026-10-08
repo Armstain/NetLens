@@ -1,3 +1,7 @@
+// Chrome runs this as a service worker and pulls the bridge in here; Firefox
+// loads both from the manifest's background.scripts instead.
+if (typeof importScripts === 'function') importScripts('mcp-bridge.js');
+
 if (chrome.sidePanel) {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })

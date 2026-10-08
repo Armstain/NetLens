@@ -173,6 +173,29 @@
         <div class="trunc-note" id="setMaxBodyWarn" hidden>⚠ Larger limits use more memory and can slow the panel on big responses. Applies to new requests.</div>
       </div>
 
+      <div class="set-group set-global">
+        <div class="set-label-row">
+          <div class="set-label">AI access (MCP)</div>
+          <button type="button" class="set-info" tabindex="0" title="Lets an AI agent in your editor (Claude Code, Cursor, Claude Desktop…) read what NetLens captured, through the NetLens MCP server in the mcp/ folder. The extension connects to that server on 127.0.0.1 only, and both sides must hold the same token. Credential headers are redacted unless the agent asks for them.">i</button>
+        </div>
+        <label class="set-row">
+          <input type="checkbox" id="setMcpEnabled" />
+          <span>Connect to the NetLens MCP server <span class="set-hint-inline" id="setMcpStatus"></span></span>
+        </label>
+        <label class="set-field set-field-wide">
+          <span>Token</span>
+          <input type="password" id="setMcpToken" placeholder="node mcp/server.js --token" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="set-field">
+          <span>Port</span>
+          <input type="number" id="setMcpPort" min="1024" max="65535" step="1" />
+        </label>
+        <label class="set-row">
+          <input type="checkbox" id="setMcpReplay" />
+          <span>Allow replay <span class="set-hint-inline">agent can resend requests as you</span></span>
+        </label>
+      </div>
+
       <label class="set-row set-master">
         <input type="checkbox" id="setEnabled" />
         <span>Enable page toasts</span>

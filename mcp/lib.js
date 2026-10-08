@@ -184,7 +184,7 @@ function detail(d, { maxBodyChars = 20000, includeSecrets = false } = {}) {
   if (d.requestBodyTruncated) out.requestBodyTruncatedAtCapture = true;
   out.responseHeaders = redactHeaders(d.responseHeaders, includeSecrets);
   out.responseBody = clip(prettyBody(d.responseBody), maxBodyChars);
-  if (d.responseBodyTruncated || d.truncated) out.responseBodyTruncatedAtCapture = true;
+  if (d.truncated) out.responseBodyTruncatedAtCapture = true;
   out.curl = buildCurl(d, includeSecrets);
   return out;
 }

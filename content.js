@@ -548,9 +548,12 @@
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg) return;
     // Any message from the panel proves it is listening, so resume sending
-    // immediately rather than waiting out the backoff.
-    panelLikely = true;
-    panelRetryAt = 0;
+    // immediately rather than waiting out the backoff. The MCP bridge's
+    // messages prove nothing about the panel.
+    if (!msg.bridge) {
+      panelLikely = true;
+      panelRetryAt = 0;
+    }
     if (msg.type === 'netlens:dump') {
       sendResponse({ buffer });
       return;

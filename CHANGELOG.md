@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- AI access (MCP): a local MCP server in `mcp/` lets AI agents in Claude Code, Cursor, Claude Desktop and similar clients list, search and read captured requests, responses, socket frames and console logs, and optionally replay requests. Enable it under **Settings → AI access (MCP)**. It is off by default, local-only and token-authenticated, and credential headers are redacted.
+- Adds the `alarms` permission so the extension can reconnect to the MCP server after Chrome suspends its service worker.
+
 ## 6.9
 
 - Configurable body capture limit in Settings: 200 KB (default), 1 MB, or 5 MB per request/response body, with a warning about memory use and panel speed at the larger sizes. Applies to new requests without a reload.

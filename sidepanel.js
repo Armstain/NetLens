@@ -451,6 +451,55 @@
     });
   }
 
+  const mcpEls = {
+    enabled: document.getElementById('setMcpEnabled'),
+    token: document.getElementById('setMcpToken'),
+    port: document.getElementById('setMcpPort'),
+    replay: document.getElementById('setMcpReplay'),
+    status: document.getElementById('setMcpStatus'),
+  };
+  if (mcpEls.enabled) {
+    const MCP_STATUS_TEXT = {
+      off: '',
+      'no-token': 'paste the token below',
+      connecting: 'connecting…',
+      waiting: 'waiting for the server — is your AI client running?',
+      'auth-failed': 'token mismatch — copy it again',
+      connected: '● connected',
+    };
+    const showMcpStatus = (status) => { mcpEls.status.textContent = MCP_STATUS_TEXT[status] || ''; };
+    let mcpSettings = {};
+    const saveMcp = () => {
+      mcpSettings = {
+        enabled: mcpEls.enabled.checked,
+        token: mcpEls.token.value.trim(),
+        port: Number(mcpEls.port.value) || 17373,
+        allowReplay: mcpEls.replay.checked,
+      };
+      chrome.storage.local.set({ netlensMcp: mcpSettings });
+    };
+    try {
+      chrome.storage.local.get(['netlensMcp'], (res) => {
+        mcpSettings = (res && res.netlensMcp) || {};
+        mcpEls.enabled.checked = !!mcpSettings.enabled;
+        mcpEls.token.value = mcpSettings.token || '';
+        mcpEls.port.value = String(mcpSettings.port || 17373);
+        mcpEls.replay.checked = !!mcpSettings.allowReplay;
+      });
+      chrome.runtime.sendMessage({ type: 'netlens:mcp:getStatus' }, (res) => {
+        if (!chrome.runtime.lastError && res) showMcpStatus(res.status);
+      });
+    } catch {}
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'netlens:mcp:status') showMcpStatus(msg.status);
+    });
+    mcpEls.enabled.addEventListener('change', saveMcp);
+    mcpEls.replay.addEventListener('change', saveMcp);
+    // 'change', not 'input': each save restarts the connection.
+    mcpEls.token.addEventListener('change', saveMcp);
+    mcpEls.port.addEventListener('change', saveMcp);
+  }
+
   setEls.enabled.addEventListener('change', () => saveSettings({ enabled: setEls.enabled.checked }));
   setEls.gqlMutationsOnly.addEventListener('change', () => saveSettings({ gqlMutationsOnly: setEls.gqlMutationsOnly.checked }));
   setEls.dedupe.addEventListener('change', () => saveSettings({ dedupe: setEls.dedupe.checked }));

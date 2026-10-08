@@ -45,6 +45,53 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 - Every request also gets a **Manual Decode** box — paste any value and run it through any preset on demand
 - Click the ⚙ in the top bar to add your own decoders: a **chain** of built-in steps (check the boxes, e.g. Base64 → JSON) for stacked standard encodings, or a **custom JS function** for a proprietary scheme (e.g. a cipher). Custom function decoders run in an isolated Web Worker with no access to the page, tabs, or extension storage. Saved decoders persist across sessions and show up automatically alongside the built-ins
 
+## AI access (MCP)
+
+Let the AI agent in your editor read NetLens's captures, so it can look up the network request itself instead of asking you to check the Network tab. A request like "check what `/transfer/search` sent and got back" becomes something it can answer.
+
+The `mcp/` folder has a small [MCP](https://modelcontextprotocol.io) server. Your AI client starts it, and the extension connects to it on `127.0.0.1` only:
+
+```
+AI client ──stdio──▶ mcp/server.js ◀──ws://127.0.0.1:17373── NetLens extension
+```
+
+**Setup**
+
+1. Install the server and print its token:
+   ```sh
+   cd mcp && npm install
+   node server.js --token
+   ```
+2. Register it with your AI client, using the absolute path to `server.js`:
+   - Claude Code: `claude mcp add netlens -- node /path/to/NetLens/mcp/server.js`
+   - Cursor, Claude Desktop and others:
+     ```json
+     { "mcpServers": { "netlens": { "command": "node", "args": ["/path/to/NetLens/mcp/server.js"] } } }
+     ```
+3. In NetLens, go to **Settings → AI access (MCP)**, turn it on and paste the token. It shows **● connected** once your AI client is running.
+
+**Tools**
+
+| Tool | What it does |
+| --- | --- |
+| `list_tabs` | Open tabs and their ids |
+| `list_requests` | Captured fetch/XHR calls (or sockets, or console logs) in a tab. Searches URL, headers and bodies as text or `/regex/`, and filters by method, status (`404`, `5xx`) or errors only |
+| `get_request` | One entry in full: headers, pretty-printed bodies, timing and a `curl` command |
+| `replay_request` | Re-sends a request from the page with its real session, with optional changes. **Off unless you tick *Allow replay*** |
+| `get_page_styles` | Fonts and colours used on the page |
+| `netlens_status` | Whether the extension is connected, and how to connect it if not |
+
+Without a `tab_id`, tools use the active tab of the focused window.
+
+**Security**
+
+- Off by default.
+- The server listens only on `127.0.0.1` and refuses any WebSocket that isn't from an extension origin, so websites can't reach it.
+- Both sides prove they hold the same token (HMAC challenge/response) before any data moves. The token itself is never sent.
+- `Authorization`, `Cookie`, `Set-Cookie` and API-key headers are redacted in tool output unless the agent asks for them with `include_secrets`.
+- The token lives in `~/.netlens-mcp/token`. Override it with `NETLENS_MCP_TOKEN`, and the port with `NETLENS_MCP_PORT`, which must match the port set in the extension.
+- Only one server can hold the port. If a second AI client starts its own copy, that copy keeps retrying and takes over when the first one exits.
+
 ## Performance design
 
 - The `fetch` wrapper records metadata synchronously and calls through immediately — the page receives the untouched promise
