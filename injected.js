@@ -4,7 +4,7 @@
   window.__netlens_installed = true;
 
   // Page scripts can post __netlens_config too, so clamp to what the panel offers.
-  const clampMaxBody = (n) => Math.min(Math.max(Number(n) || 0, 1024), 5 * 1024 * 1024);
+  const clampMaxBody = (n) => Math.min(Math.max(Number(n) || 0, 1024), 50 * 1024 * 1024);
   let MAX_BODY = 200 * 1024;
   try {
     const saved = localStorage.getItem('__netlens_max_body');

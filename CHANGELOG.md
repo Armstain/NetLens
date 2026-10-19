@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 7.0
 
 - AI access (MCP): a local MCP server in `mcp/` lets AI agents in Claude Code, Cursor, Claude Desktop and similar clients list, search and read captured requests, responses, socket frames and console logs, and optionally replay requests. Enable it under **Settings → AI access (MCP)**. It is off by default, local-only and token-authenticated, and credential headers are redacted.
+- Body capture limits expanded: added 10 MB, 20 MB, and 50 MB capture options in Settings to handle large API payloads (flight search, analytics, GeoJSON, catalogs).
+- Lazy JSON tree rendering: collapsed nodes in the JSON viewer now construct DOM elements on-demand, allowing 10–50 MB JSON responses to open instantly without freezing the panel.
+- Body truncation details: truncation notices now display exact captured vs total size (e.g. `captured 5.0 MB of 8.2 MB`) to clarify whether a row hit the current limit or was captured under an older setting.
+- Decoded tab enhancements: standard JSON responses containing Unicode escape sequences (`\uXXXX`) are no longer misclassified as raw Unicode Escape documents. Decoded string values that are valid JSON automatically render as interactive JSON trees.
+- Performance safeguards: capped decoder recursion depth to 1,000 items, cached decoder checks per entry, and increased content-script ring buffer capacity to 64 MB.
 - Adds the `alarms` permission so the extension can reconnect to the MCP server after Chrome suspends its service worker.
 
 ## 6.9

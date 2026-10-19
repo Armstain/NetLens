@@ -3,5 +3,6 @@
 node_modules/
 package-lock.json
 NetLens.zip
+mcp.zip
 
 web-ext-artifacts/

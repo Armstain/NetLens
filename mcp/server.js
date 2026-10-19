@@ -25,7 +25,7 @@ const BASE_PORT = Number(process.env.NETLENS_MCP_PORT) || 17373;
 // Each AI client spawns its own copy of this server. Instead of fighting over
 // one port, a copy takes the first free one in this span; the extension dials
 // every port in it. Keep in sync with MCP_PORT_SPAN in mcp-bridge.js.
-const PORT_SPAN = 5;
+const PORT_SPAN = 15;
 const HOME = process.env.NETLENS_MCP_HOME || path.join(os.homedir(), '.netlens-mcp');
 const TOKEN_FILE = path.join(HOME, 'token');
 const CALL_TIMEOUT_MS = 35000; // the page-side replay gives up at 30s

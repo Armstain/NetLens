@@ -70,6 +70,8 @@ function jwtDecode(str) {
 
 function unicodeEscapeDecode(str) {
   if (!/\\u[0-9a-fA-F]{4}/.test(str)) return null;
+  const trimmed = str.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return null;
   try {
     const out = JSON.parse('"' + str.replace(/"/g, '\\"') + '"');
     return out !== str ? out : null;
@@ -78,6 +80,8 @@ function unicodeEscapeDecode(str) {
 
 function urlDecodeStr(str) {
   if (!/%[0-9a-fA-F]{2}/.test(str)) return null;
+  const trimmed = str.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return null;
   try {
     const out = decodeURIComponent(str);
     return out !== str ? out : null;
@@ -108,8 +112,8 @@ const DECODER_STEPS = [
       return (typeof parsed === 'string' && !isMostlyPrintable(parsed)) ? null : parsed;
     } },
   { id: 'jwt', label: 'JWT', auto: true, fn: jwtDecode },
-  { id: 'unicodeEscape', label: 'Unicode Escape', auto: true, fn: unicodeEscapeDecode },
-  { id: 'urlDecode', label: 'URL Decode', auto: true, fn: urlDecodeStr },
+  { id: 'unicodeEscape', label: 'Unicode Escape', auto: true, fn: (v) => { const d = unicodeEscapeDecode(v); return d == null ? null : tryJsonValue(d); } },
+  { id: 'urlDecode', label: 'URL Decode', auto: true, fn: (v) => { const d = urlDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'base64url', label: 'Base64URL', auto: true, fn: (v) => { const d = b64UrlDecode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'base64', label: 'Base64', auto: true, fn: (v) => { const d = b64Decode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'hex', label: 'Hex', auto: true, fn: (v) => { const d = hexDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
@@ -223,56 +227,62 @@ function tryParsePartialJson(str) {
 function tryDecodeStructure(val, customDecoders) {
   if (typeof val !== 'string') return null;
 
-  const direct = tryDecode(val, customDecoders);
-  if (direct) return direct;
-
   try {
-    let parsed = null;
-    try {
-      parsed = JSON.parse(val);
-    } catch {
-      parsed = tryParsePartialJson(val);
-    }
-    if (parsed && typeof parsed === 'object') {
-      let hasDecoded = false;
-      const decodedStruct = structuredClone(parsed);
+    const trimmed = val.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        parsed = tryParsePartialJson(trimmed);
+      }
+      if (parsed && typeof parsed === 'object') {
+        let hasDecoded = false;
+        const decodedStruct = structuredClone(parsed);
 
-      const recurse = (obj) => {
-        if (Array.isArray(obj)) {
-          for (let i = 0; i < obj.length; i++) {
-            if (typeof obj[i] === 'string') {
-              const dec = tryDecode(obj[i], customDecoders);
-              if (dec) {
-                obj[i] = { __decoded: true, method: dec.method, value: dec.value };
-                hasDecoded = true;
+        let checked = 0;
+        const MAX_RECURSE_CHECKS = 1000;
+        const recurse = (obj) => {
+          if (++checked > MAX_RECURSE_CHECKS) return;
+          if (Array.isArray(obj)) {
+            for (let i = 0; i < obj.length; i++) {
+              if (checked > MAX_RECURSE_CHECKS) break;
+              if (typeof obj[i] === 'string') {
+                const dec = tryDecode(obj[i], customDecoders);
+                if (dec) {
+                  obj[i] = { __decoded: true, method: dec.method, value: dec.value };
+                  hasDecoded = true;
+                }
+              } else if (obj[i] && typeof obj[i] === 'object') {
+                recurse(obj[i]);
               }
-            } else if (obj[i] && typeof obj[i] === 'object') {
-              recurse(obj[i]);
+            }
+          } else if (obj && typeof obj === 'object') {
+            for (const [k, v] of Object.entries(obj)) {
+              if (checked > MAX_RECURSE_CHECKS) break;
+              if (typeof v === 'string') {
+                const dec = tryDecode(v, customDecoders);
+                if (dec) {
+                  obj[k] = { __decoded: true, method: dec.method, value: dec.value };
+                  hasDecoded = true;
+                }
+              } else if (v && typeof v === 'object') {
+                recurse(v);
+              }
             }
           }
-        } else if (obj && typeof obj === 'object') {
-          for (const [k, v] of Object.entries(obj)) {
-            if (typeof v === 'string') {
-              const dec = tryDecode(v, customDecoders);
-              if (dec) {
-                obj[k] = { __decoded: true, method: dec.method, value: dec.value };
-                hasDecoded = true;
-              }
-            } else if (v && typeof v === 'object') {
-              recurse(v);
-            }
-          }
+        };
+
+        recurse(decodedStruct);
+        if (hasDecoded) {
+          return { method: 'JSON Structure', value: decodedStruct };
         }
-      };
-
-      recurse(decodedStruct);
-      if (hasDecoded) {
-        return { method: 'JSON Structure', value: decodedStruct };
+        return null;
       }
     }
   } catch {}
 
-  return null;
+  return tryDecode(val, customDecoders);
 }
 
 function hasDecodableData(d, customDecoders) {

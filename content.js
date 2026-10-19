@@ -6,7 +6,7 @@
   const RING_SIZE = 200;
   // The ring holds full bodies, so 200 entries of capped 200KB responses would
   // pin 40MB in the page's process. Whichever limit bites first wins.
-  const RING_BYTES = 8 * 1024 * 1024;
+  const RING_BYTES = 64 * 1024 * 1024;
 
   // With the side panel closed there is no receiver, but sendMessage still
   // structured-clones the whole batch — bodies included — before it finds that

@@ -15,7 +15,7 @@
 const MCP_KEY = 'netlensMcp';
 const MCP_ALARM = 'netlens-mcp-reconnect';
 const MCP_DEFAULTS = { enabled: false, port: 17373, token: '', allowReplay: false };
-const MCP_PORT_SPAN = 5; // keep in sync with PORT_SPAN in mcp/server.js
+const MCP_PORT_SPAN = 15; // keep in sync with PORT_SPAN in mcp/server.js
 const MCP_PING_MS = 20000; // keeps Chrome's MV3 service worker alive while connected
 const MCP_RETRY_MIN_MS = 3000;
 const MCP_RETRY_MAX_MS = 15000;

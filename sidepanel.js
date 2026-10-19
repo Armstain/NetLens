@@ -713,17 +713,23 @@
         }
         container.appendChild(secTitle);
 
-        if (typeof item.value === 'object' && item.value !== null) {
+        let valToRender = item.value;
+        if (typeof valToRender === 'string') {
+          const p = parseBody(valToRender);
+          if (p && typeof p === 'object') valToRender = p;
+        }
+
+        if (typeof valToRender === 'object' && valToRender !== null) {
           const tree = document.createElement('div');
           tree.className = 'jtree';
-          const root = jsonNode(null, item.value, true);
+          const root = jsonNode(null, valToRender, false);
           if (root.tagName === 'DETAILS') root.open = true;
           tree.appendChild(root);
           container.appendChild(tree);
         } else {
           const pre = document.createElement('pre');
           pre.className = 'raw';
-          pre.textContent = String(item.value);
+          pre.textContent = String(valToRender);
           container.appendChild(pre);
         }
         continue;
@@ -753,17 +759,23 @@
         const tdVal = document.createElement('td');
         tdVal.className = 'decoded-val-cell';
         
-        if (typeof item.value === 'object' && item.value !== null) {
+        let valToRender = item.value;
+        if (typeof valToRender === 'string') {
+          const p = parseBody(valToRender);
+          if (p && typeof p === 'object') valToRender = p;
+        }
+
+        if (typeof valToRender === 'object' && valToRender !== null) {
           const tree = document.createElement('div');
           tree.className = 'jtree';
-          const root = jsonNode(null, item.value, true);
+          const root = jsonNode(null, valToRender, false);
           if (root.tagName === 'DETAILS') root.open = true;
           tree.appendChild(root);
           tdVal.appendChild(tree);
         } else {
           const pre = document.createElement('pre');
           pre.className = 'raw';
-          pre.textContent = String(item.value);
+          pre.textContent = String(valToRender);
           tdVal.appendChild(pre);
         }
         
@@ -939,7 +951,8 @@
       const keys = isArr ? value : Object.keys(value);
       const det = document.createElement('details');
 
-      const shouldOpen = forceOpen || (targetPath && (
+      const isRoot = currentPath === '';
+      const shouldOpen = isRoot || forceOpen || (targetPath && (
         targetPath === path ||
         targetPath.startsWith(path + '.') ||
         targetPath.startsWith(path + '[')
@@ -960,10 +973,23 @@
       sum.appendChild(hint);
       det.appendChild(sum);
 
-      const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
-      for (const [k, v] of children) {
-        const childPath = path ? (isArr ? `${path}[${k}]` : `${path}.${k}`) : (isArr ? `[${k}]` : String(k));
-        det.appendChild(jsonNode(String(k), v, forceOpen, targetPath, childPath));
+      let rendered = false;
+      const renderChildren = () => {
+        if (rendered) return;
+        rendered = true;
+        const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
+        for (const [k, v] of children) {
+          const childPath = path ? (isArr ? `${path}[${k}]` : `${path}.${k}`) : (isArr ? `[${k}]` : String(k));
+          det.appendChild(jsonNode(String(k), v, forceOpen, targetPath, childPath));
+        }
+      };
+
+      if (shouldOpen) {
+        renderChildren();
+      } else {
+        det.addEventListener('toggle', () => {
+          if (det.open) renderChildren();
+        });
       }
       return det;
     }
@@ -989,12 +1015,20 @@
     return div;
   }
 
-  function renderBody(container, text, truncated, targetPath = null) {
+  function renderBody(container, text, truncated, targetPath = null, responseSize = null) {
     container.textContent = '';
     if (truncated) {
       const note = document.createElement('div');
       note.className = 'trunc-note';
-      note.textContent = '⚠ Body truncated (capture limit reached, see Settings)';
+      const captured = typeof text === 'string' && text.length > 0 ? fmtSize(text.length) : null;
+      const total = responseSize ? fmtSize(responseSize) : null;
+      if (captured && total && captured !== total) {
+        note.textContent = `⚠ Body truncated: captured ${captured} of ${total} (capture limit reached, see Settings)`;
+      } else if (total) {
+        note.textContent = `⚠ Body truncated: ${total} total (capture limit reached, see Settings)`;
+      } else {
+        note.textContent = '⚠ Body truncated (capture limit reached, see Settings)';
+      }
       container.appendChild(note);
     }
     if (text == null || text === '') {
@@ -1308,7 +1342,7 @@
     wrap.addEventListener('toggle', () => {
       if (!wrap.open || built) return;
       built = true;
-      renderBody(body, prettyJson(text) || text, d.truncated);
+      renderBody(body, prettyJson(text) || text, d.truncated, null, d.size);
     });
     return wrap;
   }
@@ -1474,14 +1508,17 @@
     body.className = 'tab-body';
 
     function renderView(name, target) {
-      if (name === 'Response') renderBody(target, d.responseBody, d.truncated, revealTargets.get(d));
-      else if (name === 'Payload') renderBody(target, d.requestBody, false);
+      if (name === 'Response') renderBody(target, d.responseBody, d.truncated, revealTargets.get(d), d.responseSize);
+      else if (name === 'Payload') renderBody(target, d.requestBody, d.requestBodyTruncated);
       else if (name === 'Headers') renderHeaders(target, d);
       else if (name === 'Decoded') renderDecoded(target, d);
     }
 
     const views = { Response: () => renderView('Response', body), Payload: () => renderView('Payload', body), Headers: () => renderView('Headers', body) };
-    if (hasDecodableData(d, customDecoders)) {
+    if (d.__hasDecoded === undefined) {
+      d.__hasDecoded = hasDecodableData(d, customDecoders);
+    }
+    if (d.__hasDecoded) {
       views.Decoded = () => renderView('Decoded', body);
     }
 
@@ -1637,7 +1674,7 @@
     out.className = 'tab-body';
     const views = {
       Diff: () => { out.textContent = ''; renderDiff(out, d.responseBody, res.responseBody); },
-      Response: () => renderBody(out, res.responseBody, res.truncated),
+      Response: () => renderBody(out, res.responseBody, res.truncated, null, res.responseSize),
       Headers: () => renderHeaders(out, res),
     };
     let active = null;
