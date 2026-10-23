@@ -92,6 +92,29 @@ Without a `tab_id`, tools use the active tab of the focused window.
 - The token lives in `~/.netlens-mcp/token`. Override it with `NETLENS_MCP_TOKEN`, and the base port with `NETLENS_MCP_PORT`, which must match the base port set in the extension.
 - Each AI client runs its own server copy on the first free port in a span of 5 (17373-17377). The extension connects to all of them and lists each in Settings as client, project folder and port.
 
+## Why not just DevTools?
+
+NetLens doesn't replace DevTools. It covers what DevTools doesn't:
+
+- Load-time calls are already there when you open the panel. The Network tab only records while DevTools is open, so you'd have to reload
+- Click an element on the page to see which response, and which field in it, its value came from
+- Replay a request with the page's real session and diff the new response against the original
+- Base64, JWT, LZString and custom-encoded values are decoded inline
+- The AI agent in your editor can read captures itself over MCP
+
+If F12 already covers what you need, it's the right tool.
+
+## How it captures
+
+NetLens doesn't use `chrome.debugger`, `chrome.devtools` or `webRequest`. It wraps the page's own `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource` at `document_start`, before any page script runs. Those are web platform APIs, so a browser can't change them incompatibly without breaking the sites that use them.
+
+The extension APIs it relies on are standard Manifest V3 ones (`sidePanel`, or `sidebar_action` on Firefox, plus `tabs`, `storage` and `scripting`). The side panel is the part most likely to change, and that would mean a UI fix, not a new way of capturing.
+
+The trade-offs of this approach:
+
+- The capture scripts run on every page from load, whether or not the panel is open. What they hold is bounded per tab — see [Performance design](#performance-design)
+- Requests the page's own scripts don't make are out of reach: service workers and other extensions (see [Known limits](#known-limits))
+
 ## Performance design
 
 - The `fetch` wrapper records metadata synchronously and calls through immediately — the page receives the untouched promise
