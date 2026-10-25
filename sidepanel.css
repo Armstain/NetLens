@@ -218,6 +218,10 @@ body { display: flex; flex-direction: column; }
 .row-head:hover { background: var(--surface); }
 .row-head:active { transform: scale(0.99); }
 .row-head:focus-visible { outline: 2px solid var(--indigo); outline-offset: -2px; }
+.row.superseded .row-head { opacity: 0.55; }
+.row.superseded .row-head:hover,
+.row.superseded .row-head:focus-visible { opacity: 1; }
+.row.stale .dur::before { content: '⚠ '; color: var(--amber); }
 
 .method {
   font-family: var(--mono);

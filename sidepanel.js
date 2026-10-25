@@ -26,6 +26,7 @@
   const socketRows = new Map();           
   // Placeholder rows for requests still streaming, keyed by id:startedAt.
   const pendingRows = new Map();
+  const endpoints = new Map();
   let sessions = [];
   let paused = false;
   let pulseTimer = null;
@@ -175,6 +176,7 @@
     // registered — new frames would append to the old page's connection.
     socketRows.clear();
     pendingRows.clear();
+    endpoints.clear();
 
     if (sessions.length > 0) {
       const current = sessions[sessions.length - 1];
@@ -2075,6 +2077,37 @@
   }
 
   // ------------------------------------------------------------- ingest
+  // Rows sit in send order, but responses land in any order and the page
+  // usually renders whichever arrived last. Dim older calls to the same
+  // endpoint, and flag one that finished after a newer call, since the page
+  // may now be showing that stale response. Ids restart per page load, so
+  // this is only valid within one session.
+  function markRepeats(entry) {
+    const d = entry.data;
+    if (d.kind !== 'fetch' && d.kind !== 'xhr') return;
+    let key;
+    try {
+      const u = new URL(d.url);
+      key = `${d.method} ${u.origin}${u.pathname}`;
+    } catch {
+      key = `${d.method} ${d.url}`;
+    }
+    let ep = endpoints.get(key);
+    if (!ep) endpoints.set(key, (ep = { latest: entry, doneId: 0 }));
+    if (d.id > ep.latest.data.id) {
+      ep.latest.el.classList.add('superseded');
+      ep.latest = entry;
+    } else if (ep.latest !== entry) {
+      entry.el.classList.add('superseded');
+    }
+    if (d.pending) return;
+    if (d.id < ep.doneId) {
+      entry.el.classList.add('stale');
+      entry.el.querySelector('.row-head').title = 'Finished after a newer call to this endpoint, so the page may be showing this older response';
+    }
+    ep.doneId = Math.max(ep.doneId, d.id);
+  }
+
   function addEntries(batch) {
     if (!batch || !batch.length) return;
     const pinned = isPinnedToBottom();
@@ -2095,6 +2128,7 @@
         placeholder.el.replaceWith(el);
         placeholder.el = el;
         placeholder.data = d;
+        markRepeats(placeholder);
         continue;
       }
       const el = buildRow(d);
@@ -2102,6 +2136,7 @@
       // already exists, so there is nothing new to place in the list.
       if (!el) continue;
       const entry = { data: d, el };
+      markRepeats(entry);
       if (d.pending) pendingRows.set(key, entry);
       entries.push(entry);
       currentSession.entries.push(entry);
@@ -2124,6 +2159,7 @@
       if (i >= entries.length) break;
       const [removed] = entries.splice(i, 1);
       removed.el.remove();
+      if (removed.data) pendingRows.delete(`${removed.data.id}:${removed.data.startedAt}`);
       for (const s of sessions) {
         const idx = s.entries.indexOf(removed);
         if (idx !== -1) {
@@ -2159,7 +2195,6 @@
       dbAddEntries(s.dbId, s.pending.splice(0)).catch(() => {});
     }
   }
-      if (removed.data) pendingRows.delete(`${removed.data.id}:${removed.data.startedAt}`);
 
   function scheduleDbFlush() {
     if (dbFlushTimer) return;
@@ -2177,6 +2212,7 @@
     restoredIds.clear();
     socketRows.clear();
     pendingRows.clear();
+    endpoints.clear();
     if (diagBadge) diagBadge.hidden = true;
     listEl.textContent = '';
     updateCount();
@@ -2268,9 +2304,13 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
     if (msg.type === 'netlens:batch') {
+      // Without a reply the content script sees "port closed" as lastError,
+      // decides the panel is gone and drops every batch for the next 2s.
+      sendResponse(true);
       if (paused) return;
       addEntries(msg.batch);
     } else if (msg.type === 'netlens:locate' && msg.id != null) {
+      sendResponse(true);
       jumpToEntryId(msg.id);
     }
   });
@@ -2304,13 +2344,9 @@
     summary.textContent = `${title} (${items.length})`;
     details.appendChild(summary);
 
-      // Without a reply the content script sees "port closed" as lastError,
-      // decides the panel is gone and drops every batch for the next 2s.
-      sendResponse(true);
     if (!items.length) {
       const note = document.createElement('div');
       note.className = 'note storage-empty';
-      sendResponse(true);
       note.textContent = 'No entries.';
       details.appendChild(note);
       return details;
