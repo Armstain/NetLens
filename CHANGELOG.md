@@ -7,7 +7,6 @@
 - Repeated calls to the same endpoint: older calls are dimmed so the latest stands out, and a call that finished after a newer one is flagged with ⚠, since the page may be showing that stale response.
 - Fixed "Locate in panel" on a toast jumping to the row several times.
 - An XHR cancelled by being reopened is now shown as cancelled instead of pending forever.
-- The MCP server is on npm: `npx -y @armstain/netlens-mcp`. No download or path needed; see the README.
 
 ## 7.0
 
