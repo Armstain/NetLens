@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.1
+
+- Requests appear the moment they are sent, like in DevTools, instead of a second later or only once the response arrived. Fetch calls now get a pending row too.
+- Fixed responses going missing and rows staying "pending" when a page fires several requests quickly (e.g. changing a counter fast). The panel dropped every capture for 2 seconds after each batch.
+- Repeated calls to the same endpoint: older calls are dimmed so the latest stands out, and a call that finished after a newer one is flagged with ⚠, since the page may be showing that stale response.
+- Fixed "Locate in panel" on a toast jumping to the row several times.
+- An XHR cancelled by being reopened is now shown as cancelled instead of pending forever.
+- The MCP server is on npm: `npx -y @armstain/netlens-mcp`. No download or path needed; see the README.
+
 ## 7.0
 
 - AI access (MCP): a local MCP server in `mcp/` lets AI agents in Claude Code, Cursor, Claude Desktop and similar clients list, search and read captured requests, responses, socket frames and console logs, and optionally replay requests. Enable it under **Settings → AI access (MCP)**. It is off by default, local-only and token-authenticated, and credential headers are redacted.
