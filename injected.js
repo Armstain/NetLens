@@ -62,7 +62,10 @@
   function flush() {
     flushTimer = null;
     if (!queue.length) return;
-    const batch = queue;
+    // A request that finished inside the flush window needs no placeholder.
+    const done = new Set();
+    for (const d of queue) if (!d.pending) done.add(d.id);
+    const batch = queue.filter((d) => !d.pending || !done.has(d.id));
     queue = [];
     try { window.postMessage({ __netlens: true, batch }, '*'); } catch {}
   }
@@ -75,6 +78,8 @@
   const STREAM_CT = /event-stream|x-ndjson|stream\+json/i;
 
   const isReadableBody = (ct) => READABLE_CT.test(ct) && !STREAM_CT.test(ct);
+
+  const PENDING_BODY = '[pending, response appears when the request finishes]';
 
   // ------------------------------------------------------------------ logs
   // Sliding one-second window shared by anything that can fire faster than
@@ -253,6 +258,27 @@
     // Call through immediately  the page gets the untouched promise.
     const promise = origFetch.apply(this, arguments);
 
+    // DevTools lists a request the moment it is sent. The panel swaps this
+    // placeholder out by id once the response is in.
+    enqueue({
+      id,
+      kind: 'fetch',
+      method: String(method).toUpperCase(),
+      url: absolutize(url),
+      startedAt,
+      requestHeaders: reqHeaders,
+      requestBody: reqBody,
+      requestBodyTruncated: reqBodyTruncated,
+      credentials,
+      mode,
+      redirect,
+      pending: true,
+      status: null,
+      duration: 0,
+      responseHeaders: {},
+      responseBody: PENDING_BODY,
+    });
+
     promise.then(
       (res) => {
         // clone() MUST happen here, synchronously. Our handler is registered
@@ -346,6 +372,21 @@
 
   XHRp.open = function (method, url) {
     try {
+      // open() on an in-flight XHR cancels it without firing loadend, so its
+      // placeholder would stay pending forever.
+      const prev = this.__netlens;
+      if (prev && prev.id && !prev.done) {
+        enqueue({
+          ...xhrRequestFields(prev),
+          status: 0,
+          statusText: 'Cancelled (XHR reopened)',
+          duration: now() - prev.start,
+          responseHeaders: {},
+          responseBody: null,
+          responseSize: 0,
+          failed: true,
+        });
+      }
       this.__netlens = {
         method: String(method || 'GET').toUpperCase(),
         url: absolutize(url),
@@ -394,27 +435,17 @@
       meta.requestBodyTruncated = typeof body === 'string' && body.length > MAX_BODY;
       meta.credentials = this.withCredentials ? 'include' : 'same-origin';
 
-      // loadend fires only when the server closes the connection, and some
-      // servers hold even the headers back until then, so a long search would
-      // stay invisible for minutes. Send a placeholder from send() time that
-      // the panel swaps out by id on loadend; the delay spares fast requests
-      // a second message.
-      setTimeout(() => {
-        if (this.__netlens !== meta || meta.done) return;
-        try {
-          const headersIn = this.readyState >= 2;
-          enqueue({
-            ...xhrRequestFields(meta),
-            pending: true,
-            status: this.status || null,
-            statusText: this.statusText,
-            duration: now() - meta.start,
-            responseHeaders: headersIn ? xhrResponseHeaders(this) : {},
-            responseBody: '[pending, response appears when the request finishes]',
-            contentType: (headersIn && this.getResponseHeader('content-type')) || '',
-          });
-        } catch {}
-      }, 1000);
+      // loadend fires only when the server closes the connection, so without
+      // a placeholder from send() time the row lags DevTools by the whole
+      // round trip. The panel swaps it out by id on loadend.
+      enqueue({
+        ...xhrRequestFields(meta),
+        pending: true,
+        status: null,
+        duration: 0,
+        responseHeaders: {},
+        responseBody: PENDING_BODY,
+      });
 
       // Bind loadend exactly once per XHR instance. A reused XHR (open+send
       // called again on the same object — some hand-rolled wrappers and
