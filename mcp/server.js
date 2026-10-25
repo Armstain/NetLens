@@ -19,7 +19,7 @@ const { z } = require('zod');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const lib = require('./lib.js');
-const { name: pkgName, version } = require('./package.json');
+const { version } = require('./package.json');
 
 const BASE_PORT = Number(process.env.NETLENS_MCP_PORT) || 17373;
 // Each AI client spawns its own copy of this server. Instead of fighting over
@@ -163,7 +163,7 @@ function notConnectedMessage() {
   return [
     'The NetLens extension is not connected.',
     'In the browser: open the NetLens side panel → Settings (gear) → "AI access (MCP)",',
-    `turn it on, and paste this server's token (run \`npx -y ${pkgName} --token\`).`,
+    `turn it on, and paste this server's token (run \`node ${path.join(__dirname, 'server.js')} --token\`).`,
     `The base port there must be ${BASE_PORT} (this server listens on ${port || 'no port yet'}). The extension retries every few seconds.`,
   ].join(' ');
 }
