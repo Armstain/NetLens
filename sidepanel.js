@@ -2159,6 +2159,7 @@
       dbAddEntries(s.dbId, s.pending.splice(0)).catch(() => {});
     }
   }
+      if (removed.data) pendingRows.delete(`${removed.data.id}:${removed.data.startedAt}`);
 
   function scheduleDbFlush() {
     if (dbFlushTimer) return;
@@ -2264,7 +2265,7 @@
   });
 
   // ---------------------------------------------------------- live batches
-  chrome.runtime.onMessage.addListener((msg, sender) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || !sender.tab || sender.tab.id !== currentTabId) return;
     if (msg.type === 'netlens:batch') {
       if (paused) return;
@@ -2303,9 +2304,13 @@
     summary.textContent = `${title} (${items.length})`;
     details.appendChild(summary);
 
+      // Without a reply the content script sees "port closed" as lastError,
+      // decides the panel is gone and drops every batch for the next 2s.
+      sendResponse(true);
     if (!items.length) {
       const note = document.createElement('div');
       note.className = 'note storage-empty';
+      sendResponse(true);
       note.textContent = 'No entries.';
       details.appendChild(note);
       return details;
