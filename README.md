@@ -49,24 +49,23 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 
 Let the AI agent in your editor read NetLens's captures, so it can look up the network request itself instead of asking you to check the Network tab. A request like "check what `/transfer/search` sent and got back" becomes something it can answer.
 
-The `mcp/` folder has a small [MCP](https://modelcontextprotocol.io) server. Your AI client starts it, and the extension connects to it on `127.0.0.1` only:
+A small [MCP](https://modelcontextprotocol.io) server, published on npm as [`@armstain/netlens-mcp`](https://www.npmjs.com/package/@armstain/netlens-mcp) (source in `mcp/`). Your AI client starts it, and the extension connects to it on `127.0.0.1` only:
 
 ```
-AI client ──stdio──▶ mcp/server.js ◀──ws://127.0.0.1:17373── NetLens extension
+AI client ──stdio──▶ netlens-mcp ◀──ws://127.0.0.1:17373── NetLens extension
 ```
 
-**Setup**
+**Setup** (needs [Node.js](https://nodejs.org) 18+)
 
-1. Install the server and print its token:
+1. Print the server's token:
    ```sh
-   cd mcp && npm install
-   node server.js --token
+   npx -y @armstain/netlens-mcp --token
    ```
-2. Register it with your AI client, using the absolute path to `server.js`:
-   - Claude Code: `claude mcp add netlens -- node /path/to/NetLens/mcp/server.js`
+2. Register it with your AI client:
+   - Claude Code: `claude mcp add netlens -- npx -y @armstain/netlens-mcp`
    - Cursor, Claude Desktop and others:
      ```json
-     { "mcpServers": { "netlens": { "command": "node", "args": ["/path/to/NetLens/mcp/server.js"] } } }
+     { "mcpServers": { "netlens": { "command": "npx", "args": ["-y", "@armstain/netlens-mcp"] } } }
      ```
 3. In NetLens, go to **Settings → AI access (MCP)**, turn it on and paste the token. It shows **● connected** once your AI client is running.
 

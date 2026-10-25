@@ -1,9 +1,11 @@
 {
-  "name": "netlens-mcp",
+  "name": "@armstain/netlens-mcp",
   "version": "0.1.0",
   "description": "MCP server that lets AI agents read what the NetLens extension captured",
   "license": "MIT",
   "main": "server.js",
+  "files": ["server.js", "lib.js"],
+  "repository": { "type": "git", "url": "git+https://github.com/Armstain/NetLens.git", "directory": "mcp" },
   "bin": { "netlens-mcp": "server.js" },
   "engines": { "node": ">=18" },
   "scripts": {
