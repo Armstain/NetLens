@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.2
+
+- Fetch streams (`text/event-stream`, NDJSON) are now captured. Before, a streaming response showed up empty; now the row shows `streaming · size` while it is open, and the full stream is kept when it ends.
+- New **Stream** tab on streaming requests: every event with its time offset, a summary (event count, first/last event, longest gap), and counts per event type.
+- The Stream tab works out what a stream contains. Text sent in pieces (OpenAI, Anthropic, Gemini and similar) is joined into the final output. Lists sent in batches, like search results from several suppliers, are merged into one deduplicated list with a table of when each source arrived.
+- Settings are split into General, Toasts, AI and Shortcuts tabs.
+- Minimal toolbar: under **Settings → General → Toolbar**, hide any toolbar button, the request count, the credit or the scope tabs, or turn on Minimal to hide them all at once.
+
 ## 7.1
 
 - Requests appear the moment they are sent, like in DevTools, instead of a second later or only once the response arrived. Fetch calls now get a pending row too.
