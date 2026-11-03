@@ -122,21 +122,24 @@
       <span>Settings</span>
       <button id="settingsPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <p class="decoder-panel-desc">Page toasts fire on the page itself, so you see traffic without opening this panel. They respect these rules only — the filter bar above is for this list.</p>
+    <div class="scope-group set-tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" class="set-tab-btn active" role="tab" aria-selected="true" data-set-tab="general">General</button>
+      <button type="button" class="set-tab-btn" role="tab" aria-selected="false" data-set-tab="toasts">Toasts</button>
+      <button type="button" class="set-tab-btn" role="tab" aria-selected="false" data-set-tab="ai">AI</button>
+      <button type="button" class="set-tab-btn" role="tab" aria-selected="false" data-set-tab="shortcuts">Shortcuts</button>
+    </div>
 
     <div class="settings-body">
+     <div class="set-tab" data-tab="general">
       <div class="set-group">
         <div class="set-label-row">
           <div class="set-label">Toolbar</div>
         </div>
-        <label class="set-row">
-          <input type="checkbox" id="setShowDiag" />
-          <span>Show Diagnostics button</span>
+        <label class="set-row set-master">
+          <input type="checkbox" id="setMinimal" />
+          <span>Minimal toolbar <span class="set-hint-inline">hide everything optional</span></span>
         </label>
-        <label class="set-row">
-          <input type="checkbox" id="setShowStorage" />
-          <span>Show View storage button</span>
-        </label>
+        <div class="set-grid" id="setToolbarItems"></div>
       </div>
 
       <div class="set-group">
@@ -175,7 +178,9 @@
         </label>
         <div class="trunc-note" id="setMaxBodyWarn" hidden>⚠ Larger limits use more memory and can slow the panel on big responses. Applies to new requests.</div>
       </div>
+     </div>
 
+     <div class="set-tab" data-tab="ai" hidden>
       <div class="set-group set-global">
         <div class="set-label-row">
           <div class="set-label">AI access (MCP)</div>
@@ -199,6 +204,10 @@
           <span>Allow replay <span class="set-hint-inline">agent can resend requests as you</span></span>
         </label>
       </div>
+     </div>
+
+     <div class="set-tab" data-tab="toasts" hidden>
+      <p class="decoder-panel-desc">Page toasts fire on the page itself, so you see traffic without opening this panel. They respect these rules only — the filter bar above is for this list.</p>
 
       <label class="set-row set-master">
         <input type="checkbox" id="setEnabled" />
@@ -299,8 +308,12 @@
         <button type="button" class="set-info" tabindex="0" title="Shows the first ~120 characters of the response body right in the collapsed toast, flattened to one line. Click the toast for the full, pretty-printed body regardless of this setting.">i</button>
       </label>
 
-      <div class="set-divider"></div>
+      <div class="set-actions">
+        <button type="button" id="setTestToast" class="mini-btn" title="Preview a toast on the page right now, whatever the filters say">Send test toast</button>
+      </div>
+     </div>
 
+     <div class="set-tab" data-tab="shortcuts" hidden>
       <div class="set-group set-shortcuts">
         <div class="set-label-row">
           <div class="set-label">Keyboard Shortcuts</div>
@@ -320,9 +333,10 @@
           <button type="button" id="openShortcutsBtn" class="mini-btn" title="Open Chrome extension shortcuts settings">Configure Chrome global shortcuts &rarr;</button>
         </div>
       </div>
+     </div>
 
+      <div class="set-divider"></div>
       <div class="set-actions">
-        <button type="button" id="setTestToast" class="mini-btn" title="Preview a toast on the page right now, whatever the filters say">Send test toast</button>
         <button type="button" id="setReset" class="mini-btn">Reset to defaults</button>
       </div>
     </div>

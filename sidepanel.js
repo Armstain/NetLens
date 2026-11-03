@@ -35,28 +35,83 @@
   // stacking. Fullscreen isn't part of this group — it's a full overlay.
   const slidePanels = [];
 
-  // Toolbar buttons that are off by default: a Settings checkbox decides
-  // whether they even show. Turning one off also closes its panel, but never
-  // hides the checkbox itself — that would be the only way to turn it back on.
-  function wireToolbarToggle(btn, checkboxEl, storageKey, onHide) {
-    if (!btn) return;
-    const apply = (show) => {
-      btn.hidden = !show;
-      if (!show && onHide) onHide();
+  const TOOLBAR_ITEMS = [
+    { key: 'reveal', label: 'Reveal API source', sel: '#revealBtn', panel: 'revealPanel', def: true },
+    { key: 'inspect', label: 'Element inspector', sel: '#inspectBtn', panel: 'inspectPanel', def: true },
+    { key: 'palette', label: 'Page styles', sel: '#paletteBtn', panel: 'palettePanel', def: true },
+    { key: 'storage', label: 'Storage', sel: '#storageBtn', panel: 'storagePanel', def: false },
+    { key: 'diag', label: 'Diagnostics', sel: '#diagBtn', panel: 'diagPanel', def: false },
+    { key: 'history', label: 'Saved sessions', sel: '#historyBtn', panel: 'historyPanel', def: true },
+    { key: 'count', label: 'Request count', sel: '#count', def: true },
+    { key: 'credit', label: 'Credit', sel: '.topbar .credit', def: true },
+    { key: 'scopes', label: 'Scope tabs', sel: '.filterbar .scope-group', def: true },
+  ];
+  const toolbarDefaults = () => Object.fromEntries(TOOLBAR_ITEMS.map((i) => [i.key, i.def]));
+
+  function wireToolbarSettings() {
+    const itemsEl = document.getElementById('setToolbarItems');
+    const minimalEl = document.getElementById('setMinimal');
+    if (!itemsEl || !minimalEl) return () => {};
+    let state = toolbarDefaults();
+    const boxes = new Map();
+
+    const apply = () => {
+      for (const item of TOOLBAR_ITEMS) {
+        const show = !!state[item.key];
+        boxes.get(item.key).checked = show;
+        const el = document.querySelector(item.sel);
+        if (el) el.hidden = !show;
+        if (show) continue;
+        const panel = item.panel && document.getElementById(item.panel);
+        if (panel && !panel.hidden) document.getElementById(`${item.panel}Close`)?.click();
+        if (item.key === 'scopes' && currentScope !== 'all') {
+          scopeBtns.find((b) => b.dataset.scope === 'all')?.click();
+        }
+      }
+      minimalEl.checked = TOOLBAR_ITEMS.every((i) => !state[i.key]);
     };
-    if (!checkboxEl) return;
-    checkboxEl.addEventListener('change', () => {
-      apply(checkboxEl.checked);
-      chrome.storage.local.set({ [storageKey]: checkboxEl.checked });
+    const save = (next) => {
+      state = next;
+      apply();
+      chrome.storage.local.set({ netlensToolbar: state });
+    };
+
+    for (const item of TOOLBAR_ITEMS) {
+      const row = document.createElement('label');
+      row.className = 'set-row';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      const text = document.createElement('span');
+      text.textContent = item.label;
+      row.append(box, text);
+      itemsEl.appendChild(row);
+      boxes.set(item.key, box);
+      box.addEventListener('change', () => save({ ...state, [item.key]: box.checked }));
+    }
+    minimalEl.addEventListener('change', () => {
+      save(minimalEl.checked
+        ? Object.fromEntries(TOOLBAR_ITEMS.map((i) => [i.key, false]))
+        : toolbarDefaults());
     });
+
     try {
-      chrome.storage.local.get([storageKey], (res) => {
-        const show = !!(res && res[storageKey]);
-        checkboxEl.checked = show;
-        apply(show);
+      chrome.storage.local.get(['netlensToolbar', 'netlensShowDiag', 'netlensShowStorage'], (res) => {
+        const saved = res && res.netlensToolbar;
+        if (saved) {
+          for (const item of TOOLBAR_ITEMS) {
+            if (typeof saved[item.key] === 'boolean') state[item.key] = saved[item.key];
+          }
+        } else {
+          state.diag = !!(res && res.netlensShowDiag);
+          state.storage = !!(res && res.netlensShowStorage);
+        }
+        apply();
       });
     } catch {}
+
+    return () => save(toolbarDefaults());
   }
+  const resetToolbar = wireToolbarSettings();
 
   function buildSeparatorContent(el, url, timestamp, isCurrent = true) {
     el.textContent = '';
@@ -559,6 +614,7 @@
     toastSettings = normalizeToastSettings(null);
     saveSettings({});
     saveShortcuts(normalizeShortcuts(null));
+    resetToolbar();
     if (captureAllLogsEl) {
       captureAllLogsEl.checked = true;
       chrome.storage.local.set({ netlensCaptureAllLogs: true });
@@ -2751,7 +2807,6 @@
     });
   }
 
-  wireToolbarToggle(diagBtn, document.getElementById('setShowDiag'), 'netlensShowDiag', closeDiagPanel);
 
   // --------------------------------------------------------- saved sessions
   const historyBtn = document.getElementById('historyBtn');
@@ -2915,8 +2970,6 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !storagePanel.hidden) closeStoragePanel();
     });
-
-    wireToolbarToggle(storageBtn, document.getElementById('setShowStorage'), 'netlensShowStorage', closeStoragePanel);
   }
 
   // ------------------------------------------------------- element inspector
@@ -3880,6 +3933,17 @@
       if (settingsPanel.hidden) openSlidePanel(settingsPanel); else closeSettings();
     });
     document.getElementById('settingsPanelClose').addEventListener('click', closeSettings);
+    const setTabBtns = Array.from(settingsPanel.querySelectorAll('.set-tab-btn'));
+    const setTabs = Array.from(settingsPanel.querySelectorAll('.set-tab'));
+    for (const btn of setTabBtns) {
+      btn.addEventListener('click', () => {
+        for (const b of setTabBtns) {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', String(b === btn));
+        }
+        for (const t of setTabs) t.hidden = t.dataset.tab !== btn.dataset.setTab;
+      });
+    }
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !settingsPanel.hidden) closeSettings();
     });

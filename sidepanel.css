@@ -95,7 +95,9 @@ body { display: flex; flex-direction: column; }
 }
 /* An author display wins over the UA [hidden] rule, so .icon-btn needs this
    or the hidden attribute silently does nothing. */
-.icon-btn[hidden] { display: none; }
+.icon-btn[hidden],
+.scope-group[hidden],
+.set-tab[hidden] { display: none; }
 .icon-btn svg { display: block; }
 .icon-btn:hover { opacity: 1; background: var(--surface-2); border-color: var(--border-strong); }
 .icon-btn:active { transform: scale(0.92); }
@@ -138,7 +140,8 @@ body { display: flex; flex-direction: column; }
   padding: 2px;
   flex-shrink: 0;
 }
-.scope-btn {
+.scope-btn,
+.set-tab-btn {
   height: 100%;
   background: none;
   border: none;
@@ -155,10 +158,12 @@ body { display: flex; flex-direction: column; }
   transition: color 100ms ease, background-color 100ms ease;
   line-height: 1;
 }
-.scope-btn:hover {
+.scope-btn:hover,
+.set-tab-btn:hover {
   color: var(--text);
 }
-.scope-btn.active {
+.scope-btn.active,
+.set-tab-btn.active {
   color: var(--text);
   background: var(--surface);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -903,6 +908,10 @@ mark.hl {
   flex-direction: column;
   gap: 10px;
 }
+.set-tabs { display: flex; margin: 10px 12px 0; }
+.set-tab-btn { flex: 1; }
+.set-tab { display: flex; flex-direction: column; gap: 10px; }
+.set-tab .decoder-panel-desc { padding: 0; }
 .set-group { display: flex; flex-direction: column; gap: 5px; }
 .set-label {
   color: var(--faint);
@@ -1028,11 +1037,8 @@ mark.hl {
 .set-actions { display: flex; justify-content: space-between; }
 /* Dimmed, not disabled — a dev should be able to dial settings in before
    flipping the master switch on. */
-.settings-body.off .set-group,
-.settings-body.off .set-row:not(.set-master) { opacity: 0.5; }
-.settings-body.off .set-group.set-shortcuts,
-.settings-body.off .set-group.set-global,
-.settings-body.off .set-group.set-global .set-row { opacity: 1; }
+.settings-body.off .set-tab[data-tab="toasts"] .set-group,
+.settings-body.off .set-tab[data-tab="toasts"] .set-row:not(.set-master) { opacity: 0.5; }
 .set-shortcuts select { flex: 1; min-width: 0; cursor: pointer; }
 .set-shortcut-chrome-row { margin-top: 6px; }
 
