@@ -64,9 +64,10 @@
     if (!queue.length) return;
     // A request that finished inside the flush window needs no placeholder.
     const done = new Set();
-    for (const d of queue) if (!d.pending) done.add(d.id);
+    for (const d of queue) if (!d.pending && d.kind !== 'streamchunk') done.add(d.id);
     const batch = queue.filter((d) => !d.pending || !done.has(d.id));
     queue = [];
+    openChunks.clear();
     try { window.postMessage({ __netlens: true, batch }, '*'); } catch {}
   }
 
@@ -78,6 +79,69 @@
   const STREAM_CT = /event-stream|x-ndjson|stream\+json/i;
 
   const isReadableBody = (ct) => READABLE_CT.test(ct) && !STREAM_CT.test(ct);
+
+  const MAX_TIMELINE = 5000;
+  const openChunks = new Map();
+
+  function emitChunk(id, startedAt, text, offset, t) {
+    const open = openChunks.get(id);
+    if (open) {
+      open.text += text;
+      open.marks.push([offset, t]);
+      return;
+    }
+    const chunk = { id, startedAt, kind: 'streamchunk', text, marks: [[offset, t]] };
+    openChunks.set(id, chunk);
+    enqueue(chunk);
+  }
+
+  function drainStream(res, base, start) {
+    let reader;
+    try { reader = res.body.getReader(); } catch { return false; }
+    const decoder = new TextDecoder();
+    const timeline = [];
+    let raw = '';
+    let size = 0;
+    let truncated = false;
+
+    const push = (text) => {
+      if (!text) return;
+      size += text.length;
+      if (truncated) return;
+      const room = MAX_BODY - raw.length;
+      if (text.length > room) {
+        text = text.slice(0, room);
+        truncated = true;
+      }
+      raw += text;
+      const t = Math.round(now() - start);
+      if (timeline.length < MAX_TIMELINE) timeline.push([raw.length, t]);
+      emitChunk(base.id, base.startedAt, text, raw.length, t);
+    };
+    const finish = (extra) => enqueue({
+      ...base,
+      duration: now() - start,
+      responseBody: raw,
+      truncated,
+      responseSize: size,
+      streamed: true,
+      streamTimeline: timeline,
+      ...extra,
+    });
+    const pump = () => reader.read().then(({ done, value }) => {
+      if (done) {
+        push(decoder.decode());
+        finish();
+        return;
+      }
+      push(decoder.decode(value, { stream: true }));
+      pump();
+    }, (err) => finish({ streamError: (err && err.message) || 'Stream ended early' }));
+
+    enqueue({ ...base, pending: true, streaming: true, responseBody: '', responseSize: 0, streamTimeline: [] });
+    pump();
+    return true;
+  }
 
   const PENDING_BODY = '[pending, response appears when the request finishes]';
 
@@ -289,7 +353,8 @@
         // stream and buffers the whole response with nothing draining it.
         const ct = res.headers.get('content-type') || '';
         let cloned = null;
-        if (isReadableBody(ct)) {
+        const isStream = STREAM_CT.test(ct) && !!res.body;
+        if (isReadableBody(ct) || isStream) {
           try { cloned = res.clone(); } catch {}
         }
 
@@ -316,6 +381,9 @@
               responseHeaders,
               contentType: ct,
             };
+            if (isStream && cloned && drainStream(cloned, { ...base, headersMs: base.duration }, start)) {
+              return;
+            }
             if (isReadableBody(ct)) {
               // No clone means the body was unreachable — still record the
               // request rather than dropping the entry entirely.

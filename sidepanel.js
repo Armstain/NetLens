@@ -1405,6 +1405,194 @@
     return wrap;
   }
 
+  const MAX_STREAM_EVENT_ROWS = 500;
+  const fmtOffset = (t) => (t == null ? '' : `+${fmtDuration(t)}`);
+
+  function buildStreamEventEl(e) {
+    const wrap = document.createElement('details');
+    wrap.className = 'frame frame-recv';
+    const sum = document.createElement('summary');
+    const time = document.createElement('span');
+    time.className = 'frame-time';
+    time.textContent = `#${e.index + 1} ${fmtOffset(e.t)}`;
+    const preview = document.createElement('span');
+    preview.className = 'frame-preview';
+    preview.textContent = (e.type !== 'message' ? `[${e.type}] ` : '') + e.data.replace(/\s+/g, ' ').slice(0, 300);
+    sum.append(time, preview);
+    const body = document.createElement('div');
+    body.className = 'frame-body';
+    wrap.append(sum, body);
+    let built = false;
+    wrap.addEventListener('toggle', () => {
+      if (!wrap.open || built) return;
+      built = true;
+      renderBody(body, prettyJson(e.data) || e.data, false, null, e.data.length);
+    });
+    return wrap;
+  }
+
+  function streamSection(title, meta) {
+    const section = document.createElement('div');
+    section.className = 'stream-section';
+    const head = document.createElement('div');
+    head.className = 'stream-head';
+    const name = document.createElement('span');
+    name.className = 'stream-title';
+    name.textContent = title;
+    head.appendChild(name);
+    if (meta) {
+      const m = document.createElement('span');
+      m.className = 'stream-meta';
+      m.textContent = meta;
+      head.appendChild(m);
+    }
+    section.appendChild(head);
+    return { section, head };
+  }
+
+  function buildGroupTable(c) {
+    const table = document.createElement('table');
+    table.className = 'stream-groups';
+    const headRow = table.insertRow();
+    for (const label of [c.groupBy, 'items', 'events', 'first', 'last']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    }
+    for (const g of c.groups) {
+      const tr = table.insertRow();
+      for (const v of [g.value, g.count, g.events, fmtOffset(g.firstT), fmtOffset(g.lastT)]) {
+        tr.insertCell().textContent = String(v);
+      }
+    }
+    return table;
+  }
+
+  function renderStreamShape(container, d, parsed, shape) {
+    container.textContent = '';
+    const done = !d.pending;
+    const bits = [parsed.format.toUpperCase(), `${parsed.events.length}${parsed.overflow ? '+' : ''} events`];
+    if (shape.timing) {
+      bits.push(`first ${fmtOffset(shape.timing.first)}`, `last ${fmtOffset(shape.timing.last)}`);
+      if (shape.timing.maxGapAfter != null && shape.timing.maxGap > 0) {
+        bits.push(`longest gap ${fmtDuration(shape.timing.maxGap)} after #${shape.timing.maxGapAfter + 1}`);
+      }
+    }
+    bits.push(done ? (d.streamError ? `ended early: ${d.streamError}` : 'complete') : 'streaming…');
+    const summary = document.createElement('div');
+    summary.className = 'stream-summary';
+    summary.textContent = bits.join(' · ');
+    container.appendChild(summary);
+
+    const types = Object.entries(shape.types);
+    if (types.length > 1) {
+      const chips = document.createElement('div');
+      chips.className = 'stream-types';
+      for (const [type, n] of types) {
+        const chip = document.createElement('span');
+        chip.className = 'stream-chip';
+        chip.textContent = `${type} ×${n}`;
+        chips.appendChild(chip);
+      }
+      container.appendChild(chips);
+    }
+
+    if (d.truncated) {
+      const note = document.createElement('div');
+      note.className = 'trunc-note';
+      note.textContent = `⚠ Stream passed the body capture limit after ${fmtSize(d.responseBody.length)}; later events are not parsed.`;
+      container.appendChild(note);
+    }
+
+    const texts = parsed.format === 'text' && d.responseBody
+      ? [{ path: 'raw text', mode: 'raw', count: 1, text: d.responseBody }]
+      : shape.texts;
+    for (const t of texts) {
+      const { section, head } = streamSection('Output', `${t.path} · ${t.count} ${t.mode === 'snapshot' ? 'snapshots' : 'pieces'}`);
+      addCopyButton(head, t.text, 'Copy');
+      const pre = document.createElement('pre');
+      pre.className = 'stream-output';
+      pre.textContent = t.text;
+      section.appendChild(pre);
+      container.appendChild(section);
+    }
+
+    for (const c of shape.collections.slice(0, 2)) {
+      const meta = [`${c.total} items from ${c.events} events`];
+      if (c.keyField) meta.push(`unique by ${c.keyField}: ${c.unique}${c.duplicates ? ` (${c.duplicates} duplicates)` : ''}`);
+      const { section, head } = streamSection(`Merged · ${c.path}`, meta.join(' · '));
+      addCopyButton(head, () => JSON.stringify(c.merged, null, 2), 'Copy JSON');
+      if (c.groups.length) section.appendChild(buildGroupTable(c));
+      const more = document.createElement('details');
+      more.className = 'stream-merged';
+      const sum = document.createElement('summary');
+      sum.textContent = `View ${c.merged.length} merged items`;
+      const body = document.createElement('div');
+      more.append(sum, body);
+      let built = false;
+      more.addEventListener('toggle', () => {
+        if (!more.open || built) return;
+        built = true;
+        renderBody(body, JSON.stringify(c.merged, null, 2), false);
+      });
+      section.appendChild(more);
+      container.appendChild(section);
+    }
+  }
+
+  function renderStream(target, d) {
+    let view = target.__streamView;
+    if (!view || !target.contains(view.root)) {
+      target.textContent = '';
+      const root = document.createElement('div');
+      root.className = 'stream-view';
+      const shapeEl = document.createElement('div');
+      const { section, head } = streamSection('Events');
+      const eventsEl = document.createElement('div');
+      eventsEl.className = 'frames stream-events';
+      section.appendChild(eventsEl);
+      root.append(shapeEl, section);
+      target.appendChild(root);
+      view = target.__streamView = { root, shapeEl, eventsEl, eventsHead: head, rendered: 0 };
+    }
+    const parsed = parseStream(d.responseBody || '', { timeline: d.streamTimeline, done: !d.pending });
+    renderStreamShape(view.shapeEl, d, parsed, inferShape(parsed.events));
+
+    const atBottom = view.eventsEl.scrollTop + view.eventsEl.clientHeight >= view.eventsEl.scrollHeight - 4;
+    const frag = document.createDocumentFragment();
+    for (let i = view.rendered; i < parsed.events.length; i++) frag.appendChild(buildStreamEventEl(parsed.events[i]));
+    view.rendered = parsed.events.length;
+    view.eventsEl.appendChild(frag);
+    while (view.eventsEl.children.length > MAX_STREAM_EVENT_ROWS) view.eventsEl.removeChild(view.eventsEl.firstChild);
+    if (atBottom) view.eventsEl.scrollTop = view.eventsEl.scrollHeight;
+  }
+
+  const dirtyStreams = new Set();
+  let streamRefreshTimer = null;
+
+  function refreshStreams() {
+    streamRefreshTimer = null;
+    for (const entry of dirtyStreams) {
+      const dur = entry.el.querySelector('.row-head .dur');
+      if (dur) dur.textContent = `streaming · ${fmtSize(entry.data.responseSize) || '0 B'}`;
+      if (entry.data.__streamLive) entry.data.__streamLive();
+    }
+    dirtyStreams.clear();
+  }
+
+  function applyStreamChunk(d) {
+    const entry = pendingRows.get(`${d.id}:${d.startedAt}`);
+    if (!entry || !entry.data.streaming) return;
+    const data = entry.data;
+    data.responseBody = (data.responseBody || '') + d.text;
+    data.responseSize = data.responseBody.length;
+    if (!Array.isArray(data.streamTimeline)) data.streamTimeline = [];
+    data.streamTimeline.push(...d.marks);
+    delete data.__bodyHay;
+    dirtyStreams.add(entry);
+    if (!streamRefreshTimer) streamRefreshTimer = setTimeout(refreshStreams, 400);
+  }
+
   function createSocketRow(d) {
     const row = document.createElement('div');
     row.className = 'row socket-row';
@@ -1527,7 +1715,7 @@
 
     const dur = document.createElement('span');
     dur.className = 'dur';
-    dur.textContent = d.pending ? 'pending' : fmtDuration(d.duration);
+    dur.textContent = d.streaming && d.pending ? `streaming · ${fmtSize(d.responseSize) || '0 B'}` : d.pending ? 'pending' : fmtDuration(d.duration);
     if (d.responseSize) dur.title = fmtSize(d.responseSize);
 
     head.append(method, path, status, dur);
@@ -1570,9 +1758,18 @@
       else if (name === 'Payload') renderBody(target, d.requestBody, d.requestBodyTruncated);
       else if (name === 'Headers') renderHeaders(target, d);
       else if (name === 'Decoded') renderDecoded(target, d);
+      else if (name === 'Stream') renderStream(target, d);
     }
 
-    const views = { Response: () => renderView('Response', body), Payload: () => renderView('Payload', body), Headers: () => renderView('Headers', body) };
+    const isStream = isStreamEntry(d);
+    const views = {};
+    if (isStream) views.Stream = () => renderView('Stream', body);
+    Object.assign(views, { Response: () => renderView('Response', body), Payload: () => renderView('Payload', body), Headers: () => renderView('Headers', body) });
+    if (isStream && d.pending) {
+      d.__streamLive = () => {
+        if (activeName === 'Stream' && body.isConnected) renderView('Stream', body);
+      };
+    }
     if (d.__hasDecoded === undefined) {
       d.__hasDecoded = hasDecodableData(d, customDecoders);
     }
@@ -1581,7 +1778,7 @@
     }
 
     const q = filterEl.value.trim().toLowerCase();
-    let defaultTab = 'Response';
+    let defaultTab = isStream ? 'Stream' : 'Response';
     if (q) {
       if (typeof d.responseBody === 'string' && d.responseBody.toLowerCase().includes(q)) {
         defaultTab = 'Response';
@@ -2175,16 +2372,23 @@
     const currentSession = sessions[sessions.length - 1];
 
     for (const d of batch) {
+      if (d.kind === 'streamchunk') {
+        applyStreamChunk(d);
+        continue;
+      }
       const key = `${d.id}:${d.startedAt}`;
       const placeholder = pendingRows.get(key);
       if (placeholder) {
-        if (d.pending) continue;
-        pendingRows.delete(key);
+        if (d.pending && (!d.streaming || placeholder.data.streaming)) continue;
+        if (!d.pending) pendingRows.delete(key);
+        dirtyStreams.delete(placeholder);
+        const wasOpen = placeholder.el.classList.contains('open');
         const el = buildRow(d);
         placeholder.el.replaceWith(el);
         placeholder.el = el;
         placeholder.data = d;
         markRepeats(placeholder);
+        if (wasOpen) el.querySelector('.row-head').click();
         continue;
       }
       const el = buildRow(d);
@@ -2201,7 +2405,7 @@
     currentSession.containerEl.appendChild(frag);
 
     if (currentSession.pending) {
-      currentSession.pending.push(...batch.filter((d) => !d.pending));
+      currentSession.pending.push(...batch.filter((d) => !d.pending && d.kind !== 'streamchunk'));
       scheduleDbFlush();
     }
 

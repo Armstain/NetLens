@@ -1431,6 +1431,45 @@ mark.hl {
 
 .frame-body { padding: 2px 0 6px 22px; }
 
+.stream-view { display: flex; flex-direction: column; gap: 10px; }
+.stream-summary { font-family: var(--mono); font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+.stream-types { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.stream-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.stream-section { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.stream-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.stream-head .copy-btn { position: static; float: none; margin-left: auto; }
+.stream-title { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+.stream-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.stream-output {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.stream-groups { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 10.5px; }
+.stream-groups th { text-align: left; color: var(--faint); font-weight: 500; padding: 2px 6px 4px 0; }
+.stream-groups td { color: var(--text); padding: 2px 6px 2px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.stream-merged > summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.stream-events { max-height: 260px; }
+.stream-events:empty::after { content: 'No events yet.'; }
+
 /* ------------------------------------------------ Reveal API Source */
 .reveal-elem-header {
   display: flex;

@@ -531,14 +531,27 @@
     const data = event.data;
     if (!data || data.__netlens !== true || !Array.isArray(data.batch)) return;
 
+    const kept = [];
     for (const d of data.batch) {
-      if (d.pending) pendingIds.add(d.id);
-      else if (pendingIds.delete(d.id)) buffer = buffer.filter((b) => !(b.pending && b.id === d.id));
+      if (d.kind === 'streamchunk') {
+        const target = buffer.find((b) => b.pending && b.id === d.id && b.startedAt === d.startedAt);
+        if (target) {
+          target.responseBody = (target.responseBody || '') + d.text;
+          target.responseSize = target.responseBody.length;
+          if (Array.isArray(target.streamTimeline)) target.streamTimeline.push(...d.marks);
+        }
+        continue;
+      }
+      if (d.pending) {
+        if (pendingIds.has(d.id)) buffer = buffer.filter((b) => !(b.pending && b.id === d.id));
+        pendingIds.add(d.id);
+      } else if (pendingIds.delete(d.id)) buffer = buffer.filter((b) => !(b.pending && b.id === d.id));
+      kept.push(d);
     }
-    buffer.push(...data.batch);
+    buffer.push(...kept.map((d) => (d.streaming ? { ...d, streamTimeline: [] } : d)));
     trimBuffer();
 
-    for (const entry of data.batch) {
+    for (const entry of kept) {
       if (!entry.pending && toastMatch(entry, toastSettings)) showToast(entry);
     }
 
