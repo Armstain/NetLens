@@ -1035,6 +1035,7 @@
       const renderChildren = () => {
         if (rendered) return;
         rendered = true;
+        delete det.__value;
         const children = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
         for (const [k, v] of children) {
           const childPath = path ? (isArr ? `${path}[${k}]` : `${path}.${k}`) : (isArr ? `[${k}]` : String(k));
@@ -1045,6 +1046,8 @@
       if (shouldOpen) {
         renderChildren();
       } else {
+        det.__value = value;
+        det.__expand = () => { det.open = true; renderChildren(); };
         det.addEventListener('toggle', () => {
           if (det.open) renderChildren();
         });
@@ -1120,6 +1123,7 @@
         rawPre.hidden = showingRaw;
         tree.hidden = !showingRaw;
         toggleBtn.textContent = showingRaw ? 'Raw' : 'Pretty';
+        refreshSearchIn(toggleBtn);
       });
 
       container.append(toggleBtn, tree, rawPre);
@@ -1225,14 +1229,10 @@
   // --------------------------------------------------------------- search
   function bodyHay(d) {
     if (d.__bodyHay !== undefined) return d.__bodyHay;
-    let hay = '';
-    if (d.kind === 'log') {
-      hay = `${d.message || ''}\n${d.stack || ''}`;
-    } else {
-      if (typeof d.requestBody === 'string') hay += d.requestBody;
-      if (typeof d.responseBody === 'string') hay += '\n' + d.responseBody;
-    }
-    d.__bodyHay = hay.slice(0, BODY_SEARCH_CAP).toLowerCase();
+    const low = (s) => (typeof s === 'string' ? s.slice(0, BODY_SEARCH_CAP).toLowerCase() : '');
+    d.__bodyHay = d.kind === 'log'
+      ? { log: low(`${d.message || ''}\n${d.stack || ''}`) }
+      : { response: low(d.responseBody), payload: low(d.requestBody) };
     return d.__bodyHay;
   }
 
@@ -1247,8 +1247,7 @@
           built = true;
           buildDetailFn();
         }
-        const q = filterEl.value.trim().toLowerCase();
-        if (q) highlightMatches(detail, q, true);
+        searchDetail(detail, filterEl.value.trim().toLowerCase(), true);
       }
     };
     head.addEventListener('click', toggle);
@@ -1782,7 +1781,7 @@
     if (q) {
       if (typeof d.responseBody === 'string' && d.responseBody.toLowerCase().includes(q)) {
         defaultTab = 'Response';
-      } else if (views.Decoded && bodyHay(d).includes(q)) {
+      } else if (views.Decoded && Object.values(bodyHay(d)).some(h => h.includes(q))) {
         defaultTab = 'Decoded';
       } else if (typeof d.requestBody === 'string' && d.requestBody.toLowerCase().includes(q)) {
         defaultTab = 'Payload';
@@ -1801,8 +1800,7 @@
         activeName = name;
         btn.classList.add('active');
         views[name]();
-        const currentQ = filterEl.value.trim().toLowerCase();
-        if (currentQ) highlightMatches(body, currentQ, true);
+        searchDetail(container.closest('.row-detail'), filterEl.value.trim().toLowerCase(), true);
       });
       tabs.appendChild(btn);
       if (name === defaultTab) { activeBtn = btn; }
@@ -1824,7 +1822,7 @@
       renderView(activeName, fullscreenBodyEl);
       const currentQ = filterEl.value.trim().toLowerCase();
       fullscreenSearchEl.value = currentQ;
-      if (currentQ) highlightMatches(fullscreenBodyEl, currentQ, true);
+      runFullscreenSearch();
       openSlidePanel(fullscreenPanel);
       fullscreenSearchEl.focus();
     });
@@ -1833,7 +1831,19 @@
     container.append(tabs, body);
     if (activeBtn) activeBtn.classList.add('active');
     views[activeName]();
-    if (q) highlightMatches(body, q, true);
+    tabs.__markHits = (query) => {
+      const re = query ? new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
+      const sources = {
+        Response: d.responseBody,
+        Stream: d.responseBody,
+        Payload: d.requestBody,
+        Headers: JSON.stringify([d.requestHeaders, d.responseHeaders]),
+      };
+      for (const btn of tabs.querySelectorAll('.tab')) {
+        const src = sources[btn.textContent];
+        btn.classList.toggle('has-hit', !!re && typeof src === 'string' && re.test(src));
+      }
+    };
 
     buildReplay(container, d);
   }
@@ -2138,37 +2148,46 @@
   }
 
   // -------------------------------------------------------- text highlighting
+  const MAX_MARKS = 500;
+
   function clearHighlights(containerEl) {
     if (!containerEl) return;
-    const marks = containerEl.querySelectorAll('mark.hl');
-    for (const mark of marks) {
+    const parents = new Set();
+    for (const mark of containerEl.querySelectorAll('mark.hl')) {
       const parent = mark.parentNode;
       if (parent) {
         parent.replaceChild(document.createTextNode(mark.textContent), mark);
-        parent.normalize();
+        parents.add(parent);
       }
     }
+    for (const parent of parents) parent.normalize();
   }
 
-  function highlightMatches(containerEl, queryStr, scrollIntoView = false) {
-    if (!containerEl) return;
+  function highlightMatches(containerEl, queryStr) {
+    const createdMarks = [];
+    createdMarks.total = 0;
+    if (!containerEl) return createdMarks;
     clearHighlights(containerEl);
-    if (!queryStr) return;
+    if (!queryStr) return createdMarks;
     const q = queryStr.toLowerCase();
 
-    const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, null, false);
+    const walker = document.createTreeWalker(containerEl, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode(n) {
+        if (n.nodeType === 1) {
+          return n.hidden || n.matches('.copy-btn, .tab, .match-nav, mark') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_SKIP;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
     const textNodes = [];
     let node;
     while ((node = walker.nextNode())) {
-      if (node.nodeValue && node.nodeValue.toLowerCase().includes(q)) {
-        const parent = node.parentElement;
-        if (parent && !parent.closest('.copy-btn, .tab, mark')) {
-          textNodes.push(node);
-        }
-      }
+      const lower = node.nodeValue.toLowerCase();
+      let i = lower.indexOf(q);
+      if (i === -1) continue;
+      if (createdMarks.total < MAX_MARKS) textNodes.push(node);
+      while (i !== -1) { createdMarks.total++; i = lower.indexOf(q, i + q.length); }
     }
-
-    const createdMarks = [];
 
     for (const textNode of textNodes) {
       const text = textNode.nodeValue;
@@ -2177,7 +2196,7 @@
       let lastIdx = 0;
       let idx = lower.indexOf(q);
 
-      while (idx !== -1) {
+      while (idx !== -1 && createdMarks.length < MAX_MARKS) {
         if (idx > lastIdx) {
           frag.appendChild(document.createTextNode(text.slice(lastIdx, idx)));
         }
@@ -2207,11 +2226,74 @@
       }
     }
 
-    if (scrollIntoView && createdMarks.length > 0) {
-      try {
-        createdMarks[0].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      } catch {}
+    return createdMarks;
+  }
+
+  function renderMatchNav(host, marks, query, scroll) {
+    let nav = host.querySelector(':scope > .match-nav');
+    if (!query) { nav?.remove(); return; }
+    if (!nav) {
+      nav = document.createElement('span');
+      nav.className = 'match-nav';
+      nav.innerHTML = '<span class="match-count"></span><button type="button" class="mini-btn" aria-label="Previous match">‹</button><button type="button" class="mini-btn" aria-label="Next match">›</button>';
+      const [, prev, next] = nav.children;
+      prev.addEventListener('click', (e) => { e.stopPropagation(); nav.__step(-1); });
+      next.addEventListener('click', (e) => { e.stopPropagation(); nav.__step(1); });
+      host.insertBefore(nav, host.querySelector(':scope > .fullscreen-btn'));
     }
+    let cur = -1;
+    const countEl = nav.firstChild;
+    const more = marks.total > marks.length ? '+' : '';
+    nav.classList.toggle('none', !marks.length);
+    nav.__step = (dir) => {
+      if (!marks.length) return;
+      marks[cur]?.classList.remove('cur');
+      cur = (cur + dir + marks.length) % marks.length;
+      const m = marks[cur];
+      m.classList.add('cur');
+      countEl.textContent = `${cur + 1}/${marks.length}${more}`;
+      try { m.scrollIntoView({ block: 'center' }); } catch {}
+    };
+    countEl.textContent = marks.length ? `${marks.length}${more} match${marks.length === 1 && !more ? '' : 'es'}` : 'no match here';
+    if (scroll) nav.__step(1);
+  }
+
+  function expandJsonMatches(root, q) {
+    if (!root || !q) return;
+    const lazy = (el) => el.__value !== undefined && !el.closest('[hidden]');
+    const queue = [...root.querySelectorAll('details')].filter(lazy);
+    let opened = 0;
+    while (queue.length && opened < MAX_MARKS) {
+      const det = queue.shift();
+      if (det.__value === undefined) continue;
+      let text;
+      try { text = JSON.stringify(det.__value); } catch { continue; }
+      if (!text || !text.toLowerCase().includes(q)) continue;
+      det.__expand();
+      opened++;
+      for (const child of det.querySelectorAll(':scope > details')) if (lazy(child)) queue.push(child);
+    }
+  }
+
+  function searchDetail(detail, q, scroll = false) {
+    if (!detail) return;
+    detail.__q = q;
+    expandJsonMatches(detail, q);
+    const tabs = detail.querySelector('.tabs');
+    tabs?.__markHits?.(q);
+    renderMatchNav(tabs || detail.querySelector('.row-detail-inner') || detail, highlightMatches(detail, q), q, scroll);
+  }
+
+  function runFullscreenSearch() {
+    const q = fullscreenSearchEl.value.trim().toLowerCase();
+    expandJsonMatches(fullscreenBodyEl, q);
+    renderMatchNav(fullscreenSearchEl.parentElement, highlightMatches(fullscreenBodyEl, q), q, true);
+  }
+
+  function refreshSearchIn(el) {
+    const detail = el.closest('.row-detail');
+    if (detail) searchDetail(detail, filterEl.value.trim().toLowerCase());
+    else if (fullscreenBodyEl.contains(el)) runFullscreenSearch();
   }
 
   // ------------------------------------------------------------ filtering
@@ -2228,8 +2310,18 @@
     let visibleCount = 0;
     for (const { data, el } of entries) {
       const isEntryLog = data.kind === 'log';
-      const matchesText =
-        !test || test(el.dataset.hay) || test(bodyHay(data));
+      let hit = '';
+      let matchesText = !test || test(el.dataset.hay);
+      if (!matchesText) {
+        const hays = bodyHay(data);
+        hit = Object.keys(hays).find(k => test(hays[k])) || '';
+        matchesText = !!hit;
+      }
+      const statusEl = el.querySelector('.row-head > .status');
+      if (statusEl) {
+        if (hit && hit !== 'log') statusEl.dataset.hit = `in ${hit}`;
+        else delete statusEl.dataset.hit;
+      }
 
       let matchesScope = true;
       if (currentScope === 'api') {
@@ -2257,13 +2349,8 @@
 
       if (el.classList.contains('open')) {
         const detail = el.querySelector('.row-detail');
-        if (detail) {
-          if (matches && q) {
-            highlightMatches(detail, q, true);
-          } else {
-            clearHighlights(detail);
-          }
-        }
+        const dq = matches ? q : '';
+        if (detail && detail.__q !== dq) searchDetail(detail, dq, true);
       }
     }
     for (const session of sessions) {
@@ -2286,6 +2373,11 @@
   }
 
   filterEl.addEventListener('input', scheduleFilter);
+  filterEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const nav = listEl.querySelector('.row.open .match-nav');
+    if (nav) { e.preventDefault(); nav.__step(e.shiftKey ? -1 : 1); }
+  });
 
   function setScope(scope) {
     currentScope = scope;
@@ -2856,8 +2948,15 @@
     });
   }
   if (fullscreenSearchEl) {
+    let fsDebounce = null;
     fullscreenSearchEl.addEventListener('input', () => {
-      highlightMatches(fullscreenBodyEl, fullscreenSearchEl.value.trim().toLowerCase(), false);
+      clearTimeout(fsDebounce);
+      fsDebounce = setTimeout(runFullscreenSearch, FILTER_DEBOUNCE_MS);
+    });
+    fullscreenSearchEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      fullscreenSearchEl.parentElement.querySelector(':scope > .match-nav')?.__step(e.shiftKey ? -1 : 1);
     });
   }
 

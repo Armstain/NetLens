@@ -774,6 +774,42 @@ mark.hl {
   border-radius: 2px;
   padding: 0 1px;
 }
+mark.hl.cur { background: #f59e0b; color: #111; }
+
+.status[data-hit]::before {
+  content: attr(data-hit);
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.tab.has-hit::after {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+  vertical-align: middle;
+}
+
+.match-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  white-space: nowrap;
+}
+.match-nav.none { color: var(--faint); }
+.match-nav.none .mini-btn { display: none; }
+.match-nav .mini-btn { padding: 0 6px; line-height: 16px; }
 
 /* ---------------------------------------------------- manual decode panel */
 .manual-decode {
@@ -883,6 +919,7 @@ mark.hl {
   position: relative;
 }
 .fullscreen-btn { margin-left: auto; }
+.match-nav + .fullscreen-btn { margin-left: 0; }
 .decoder-panel-head {
   display: flex;
   align-items: center;
