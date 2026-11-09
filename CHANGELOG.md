@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.3
+
+- Search now shows where it matched. A row that matches only in its body gets an "in response" or "in payload" chip, and in an open row every tab that contains the term gets a dot.
+- An open row shows a match counter (e.g. `3/12`) with previous/next buttons. Enter and Shift+Enter in the search box step through the matches, and the current one is highlighted in solid amber. The full-screen view has the same counter.
+- Matches inside collapsed JSON nodes are now found: nodes containing the term are expanded automatically.
+- Faster search on large responses: highlighting skips the hidden Raw/Pretty copy, stops at 500 matches (shown as `500+`), and is not redone on every keystroke when the query hasn't changed.
+
 ## 7.2
 
 - Fetch streams (`text/event-stream`, NDJSON) are now captured. Before, a streaming response showed up empty; now the row shows `streaming · size` while it is open, and the full stream is kept when it ends.
