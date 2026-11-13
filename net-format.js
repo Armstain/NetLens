@@ -16,6 +16,9 @@ function fmtSize(bytes) {
 }
 
 function statusClass(d) {
+  // Cancelled by the page itself, so neither a failure nor a status class
+  // any toast filter is keyed on.
+  if (d.aborted) return 'aborted';
   if (d.failed || d.status === 0) return 'failed';
   if (d.status >= 500) return 's5xx';
   if (d.status >= 400) return 's4xx';
@@ -30,6 +33,7 @@ function isError(d) {
   // frame is just payload and is never an error by itself.
   if (d.kind === 'ws') return d.event === 'error' || (d.event === 'close' && d.wasClean === false);
   if (d.kind === 'wsframe') return false;
+  if (d.aborted) return false;
   return d.failed || d.status === 0 || d.status >= 400;
 }
 
@@ -211,7 +215,7 @@ function urlAllows(settings, url) {
 // An unlisted method (PROPFIND, custom verbs) passes unless explicitly unticked.
 function toastMatch(d, settings) {
   const s = settings;
-  if (!s || !s.enabled || d.kind === 'log') return false;
+  if (!s || !s.enabled || d.kind === 'log' || d.aborted) return false;
   if (!isApi(d) && !d.failed) return false;
   if (s.methods[d.method] === false) return false;
   if (s.gqlMutationsOnly && isGraphql(d) && !isGqlMutation(d)) return false;

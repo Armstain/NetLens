@@ -129,10 +129,21 @@ The trade-offs of this approach:
 
 - Can't capture on `chrome://` pages or the Chrome Web Store
 - Misses requests from service workers and other extensions
+- Only the top frame is captured: requests made inside an `<iframe>` (embedded widgets, payment forms) don't appear
+- Console capture wraps `console.*`, so DevTools attributes every log line to `injected.js` instead of the file that logged it. Getters on a logged object are shown as `[Getter]`, not read
 - `FormData`/`Blob` request bodies are shown as placeholders, not serialized
 - Binary socket frames are recorded by size, not decoded — reading a `Blob` back is asynchronous and costs more than the capture is worth at frame rates
 - Named `EventSource` events are only captured for types the page itself subscribes to; there is no way to enumerate the rest
 - Frame payloads aren't reached by the deep body search, which covers request and response bodies
+
+## Development
+
+There is no build step. The tests are plain Node scripts (Node 22 or newer):
+
+```sh
+npm test            # unit tests for the extension's pure logic
+npm run test:mcp    # installs the MCP server's dependencies and runs its end-to-end test
+```
 
 ## License
 

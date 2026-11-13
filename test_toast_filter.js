@@ -1,7 +1,7 @@
 const assert = require('assert');
 const {
   DEFAULT_TOAST_SETTINGS, TOAST_PRESETS, TOAST_METHODS, TOAST_METHOD_GROUPS,
-  normalizeToastSettings, buildUrlTest, toastMatch,
+  normalizeToastSettings, buildUrlTest, toastMatch, isError, statusClass,
 } = require('./net-format.js');
 
 const on = (preset, over) => normalizeToastSettings({ enabled: true, ...TOAST_PRESETS[preset], ...over });
@@ -99,5 +99,15 @@ for (const src of ['/api/g', '/https/y', '/API/gi']) {
   for (let i = 0; i < 4; i++) assert.strictEqual(test('https://x.test/api/users'), true, `${src} call ${i}`);
 }
 assert.strictEqual(buildUrlTest('/orders/g')('https://x.test/api/users'), false);
+
+// A request the page cancelled itself is not a failure: no toast under any
+// preset, not an error, and its own status class
+const aborted = { ...netFail, statusText: 'The user aborted a request.', aborted: true };
+assert.strictEqual(toastMatch(aborted, on('errors')), false);
+assert.strictEqual(toastMatch(aborted, on('all')), false);
+assert.strictEqual(isError(aborted), false);
+assert.strictEqual(isError(netFail), true);
+assert.strictEqual(statusClass(aborted), 'aborted');
+assert.strictEqual(statusClass(netFail), 'failed');
 
 console.log('toast filter: all assertions passed');

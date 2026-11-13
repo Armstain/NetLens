@@ -35,6 +35,7 @@ function isRequest(d) {
 }
 
 function isFailed(d) {
+  if (d.aborted) return false;
   return !!d.error || d.status === 0 || (typeof d.status === 'number' && d.status >= 400);
 }
 
@@ -100,6 +101,7 @@ function summarize(d) {
     at: iso(d.startedAt),
   };
   if (d.error) out.error = d.error;
+  if (d.aborted) out.aborted = true;
   return out;
 }
 

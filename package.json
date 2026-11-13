@@ -1,0 +1,10 @@
+{
+  "name": "netlens",
+  "private": true,
+  "description": "Development scripts for the NetLens extension. The extension itself has no build step.",
+  "scripts": {
+    "test": "node --test \"test_*.js\"",
+    "test:mcp": "npm --prefix mcp install && npm --prefix mcp test"
+  },
+  "engines": { "node": ">=22" }
+}

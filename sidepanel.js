@@ -1709,7 +1709,7 @@
 
     const status = document.createElement('span');
     status.className = 'status';
-    status.textContent = d.pending && !d.status ? '…' : d.failed || d.status === 0 ? 'ERR' : String(d.status);
+    status.textContent = d.pending && !d.status ? '…' : d.aborted ? 'CANCEL' : d.failed || d.status === 0 ? 'ERR' : String(d.status);
     if (d.statusText) status.title = d.statusText;
 
     const dur = document.createElement('span');

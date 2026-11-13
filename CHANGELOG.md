@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed a tab's captures becoming unreadable after the page logged a `BigInt`, and captures going missing when it logged a `Symbol`.
+- Fixed `/regex/g` filters (panel search and toast URL match) matching only every other request.
+- Requests the page cancelled itself (`AbortController`, `xhr.abort()`) are shown as `CANCEL` instead of `ERR`. They no longer count as errors, raise toasts or appear under failed requests.
+- Console capture is cheaper and more faithful: each logged object is walked once instead of twice, with a cap on total size, and getters are no longer run. `Date`, `RegExp`, `Map` and `Set` now show their contents instead of `{}`.
+- `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
+
 ## 7.3
 
 - Search now shows where it matched. A row that matches only in its body gets an "in response" or "in payload" chip, and in an open row every tab that contains the term gets a dot.

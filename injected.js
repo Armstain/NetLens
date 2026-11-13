@@ -172,7 +172,12 @@
 
   const logAllowed = makeRateLimiter(50, 'log(s)');
 
-  function safeStringify(val, depth = 4, seen) {
+  // One log call may hand over an object graph of any size, and this runs on
+  // the page's own thread whether or not the panel is open, so the walk is
+  // bounded in total as well as in depth and breadth.
+  const LOG_NODE_BUDGET = 2000;
+
+  function safeStringify(val, depth = 4, seen, budget) {
     if (val instanceof Error) return `${val.message}\n${val.stack || ''}`;
     if (typeof Element !== 'undefined' && val instanceof Element) return `[${val.tagName}]`;
     if (typeof val === 'function') return `[Function ${val.name || 'anonymous'}]`;
@@ -182,17 +187,37 @@
     if (typeof val === 'bigint') return `${val}n`;
     if (typeof val === 'symbol') return val.toString();
     if (typeof val !== 'object' || val === null) return val;
+    // These have no enumerable keys, so the generic walk below would report
+    // every one of them as an empty object.
+    // Tag, not instanceof: a value from another frame has that frame's
+    // constructors and would fail the check.
+    let tag = '';
+    try { tag = Object.prototype.toString.call(val); } catch {}
+    try {
+      if (tag === '[object Date]') return Number.isNaN(val.getTime()) ? 'Invalid Date' : val.toISOString();
+      if (tag === '[object RegExp]') return String(val);
+    } catch {}
     seen = seen || new WeakSet();
+    budget = budget || { left: LOG_NODE_BUDGET };
     if (seen.has(val)) return '[Circular]';
     if (depth <= 0) return Array.isArray(val) ? '[Array]' : '[Object]';
+    if (budget.left <= 0) return '[…]';
     seen.add(val);
     try {
-      if (Array.isArray(val)) return val.slice(0, 50).map((v) => safeStringify(v, depth - 1, seen));
+      const walk = (v) => { budget.left--; return safeStringify(v, depth - 1, seen, budget); };
+      if (Array.isArray(val)) return val.slice(0, 50).map(walk);
+      if (tag === '[object Map]') {
+        return { [`Map(${val.size})`]: Array.from(val).slice(0, 50).map(([k, v]) => [walk(k), walk(v)]) };
+      }
+      if (tag === '[object Set]') return { [`Set(${val.size})`]: Array.from(val).slice(0, 50).map(walk) };
       const out = {};
       let n = 0;
       for (const k in val) {
-        if (++n > 50) { out['…'] = 'truncated'; break; }
-        out[k] = safeStringify(val[k], depth - 1, seen);
+        if (++n > 50 || budget.left <= 0) { out['…'] = 'truncated'; break; }
+        // Reading an accessor runs page code: it can be slow, throw, or
+        // change state, all for a log line. DevTools leaves these unread too.
+        const desc = Object.getOwnPropertyDescriptor(val, k);
+        out[k] = desc && desc.get ? '[Getter]' : walk(val[k]);
       }
       return out;
     } catch {
@@ -203,13 +228,13 @@
   function enqueueLog(level, args, extra) {
     if (!logAllowed()) return;
 
+    // Serialised once and reused for the message: walking each argument a
+    // second time doubled the cost of every log for the same result.
+    const budget = { left: LOG_NODE_BUDGET };
+    const safeArgs = args.map((a) => safeStringify(a, 4, null, budget));
     let message;
     try {
-      message = args.map((a) => {
-        if (typeof a === 'string') return a;
-        const s = safeStringify(a);
-        return typeof s === 'string' ? s : JSON.stringify(s);
-      }).join(' ');
+      message = safeArgs.map((s) => (typeof s === 'string' ? s : JSON.stringify(s))).join(' ');
     } catch { message = '[unrenderable log]'; }
 
     enqueue(Object.assign({
@@ -217,7 +242,7 @@
       kind: 'log',
       level,
       message: truncate(message).body,
-      args: args.map((a) => safeStringify(a)),
+      args: safeArgs,
       startedAt: Date.now(),
     }, extra));
   }
@@ -429,8 +454,10 @@
           responseBody: null,
           responseSize: 0,
           failed: true,
+          // The page cancelled this itself (AbortController, a superseded
+          // type-ahead call). That is not a failure worth alerting on.
+          aborted: !!err && err.name === 'AbortError',
         });
-       
       }
     );
 
@@ -531,6 +558,9 @@
       // closing over `meta` keeps a single listener always correctly paired.
       if (!this.__netlensBound) {
         this.__netlensBound = true;
+        this.addEventListener('abort', () => {
+          if (this.__netlens) this.__netlens.aborted = true;
+        });
         this.addEventListener('loadend', () => {
           const m = this.__netlens;
           if (!m) return;
@@ -568,6 +598,7 @@
               truncated,
               contentType: ct,
               failed: this.status === 0,
+              aborted: !!m.aborted,
             });
           } catch {}
         });
