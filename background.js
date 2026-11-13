@@ -27,8 +27,23 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   openPanel(sender.tab.id);
 });
 
+// This fetch runs with the extension's host permissions, so it is limited to
+// what it exists for: a web stylesheet, asked for by a tab's content script.
+function isWebUrl(url) {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== 'netlens:fetchCss' || !msg.url) return;
+  if (!sender.tab || !isWebUrl(msg.url)) {
+    sendResponse({ error: 'Not a web stylesheet URL' });
+    return;
+  }
   fetch(msg.url, { credentials: 'omit' })
     .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
     .then((text) => sendResponse({ text }))

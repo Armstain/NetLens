@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { entryBytes, sessionsToPrune } = require('./store.js');
+const { entryBytes, sessionsToPrune, entriesToTrim } = require('./store.js');
 const { dayLabel } = require('./net-format.js');
 
 // ----------------------------------------------------------------- sizing
@@ -65,5 +65,24 @@ assert.strictEqual(dayLabel(at(2026, 8, 16, 23, 59), now), 'Yesterday');
 // 12. Within the past week, the weekday name; older than that, a date
 assert.strictEqual(dayLabel(at(2026, 8, 14, 9, 0), now), new Date(2026, 8, 14).toLocaleDateString([], { weekday: 'long' }));
 assert.strictEqual(dayLabel(at(2026, 7, 1, 9, 0), now), new Date(2026, 7, 1).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+
+// ----------------------------------------------------- trimming one session
+
+// 13. A session inside the budget loses nothing, including exactly at the cap
+assert.strictEqual(entriesToTrim([40, 40], 100), 0);
+assert.strictEqual(entriesToTrim([50, 50], 100), 0);
+
+// 14. Over the cap, the oldest go until it is at 80% — not merely under 100%,
+//     or the next write would trigger another trim straight away
+assert.strictEqual(entriesToTrim([30, 30, 30, 30], 100), 2);
+assert.strictEqual(entriesToTrim([10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10], 100), 3);
+
+// 15. The newest entry survives even when it alone is over the budget
+assert.strictEqual(entriesToTrim([10, 500], 100), 1);
+assert.strictEqual(entriesToTrim([500], 100), 0);
+
+// 16. Empty input never throws
+assert.strictEqual(entriesToTrim([], 100), 0);
+assert.strictEqual(entriesToTrim(null, 100), 0);
 
 console.log('store tests passed');

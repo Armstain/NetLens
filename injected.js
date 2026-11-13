@@ -5,10 +5,14 @@
 
   // Page scripts can post __netlens_config too, so clamp to what the panel offers.
   const clampMaxBody = (n) => Math.min(Math.max(Number(n) || 0, 1024), 50 * 1024 * 1024);
+  // Settings arrive from the content script a moment after load. They are
+  // deliberately not cached in the page's localStorage: that is the site's
+  // storage, and the site could see and change whatever was left there.
   let MAX_BODY = 200 * 1024;
+  // Earlier versions did cache them there, so clear what they left behind.
   try {
-    const saved = localStorage.getItem('__netlens_max_body');
-    if (saved !== null) MAX_BODY = clampMaxBody(saved);
+    localStorage.removeItem('__netlens_max_body');
+    localStorage.removeItem('__netlens_capture_all_logs');
   } catch {}
   const FLUSH_MS = 100;
   // A page can fire thousands of requests inside one flush window. Sending
@@ -248,20 +252,19 @@
   }
 
   let captureAllLogs = true;
-  try {
-    const saved = localStorage.getItem('__netlens_capture_all_logs');
-    if (saved !== null) captureAllLogs = saved === 'true';
-  } catch {}
 
   window.addEventListener('message', (event) => {
     if (event.source !== window || !event.data) return;
     if (event.data.__netlens_config && event.data.maxBody > 0) {
       MAX_BODY = clampMaxBody(event.data.maxBody);
-      try { localStorage.setItem('__netlens_max_body', String(MAX_BODY)); } catch {}
     }
     if (event.data.__netlens_config && event.data.captureAllLogs !== undefined) {
       captureAllLogs = Boolean(event.data.captureAllLogs);
-      try { localStorage.setItem('__netlens_capture_all_logs', String(captureAllLogs)); } catch {}
+      // Logs from before the setting arrived were captured under the default.
+      // Drop the ones still waiting to be sent that it would have skipped.
+      if (!captureAllLogs) {
+        queue = queue.filter((d) => d.kind !== 'log' || d.level === 'error' || d.level === 'warn');
+      }
     }
   });
 

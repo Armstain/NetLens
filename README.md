@@ -90,7 +90,7 @@ Without a `tab_id`, tools use the active tab of the focused window.
 - Both sides prove they hold the same token (HMAC challenge/response) before any data moves. The token itself is never sent.
 - `Authorization`, `Cookie`, `Set-Cookie` and API-key headers are redacted in tool output unless the agent asks for them with `include_secrets`.
 - The token lives in `~/.netlens-mcp/token`. Override it with `NETLENS_MCP_TOKEN`, and the base port with `NETLENS_MCP_PORT`, which must match the base port set in the extension.
-- Each AI client runs its own server copy on the first free port in a span of 5 (17373-17377). The extension connects to all of them and lists each in Settings as client, project folder and port.
+- Each AI client runs its own server copy on the first free port in a span of 15 (17373-17387). The extension connects to all of them and lists each in Settings as client, project folder and port.
 
 ## Why not just DevTools?
 

@@ -43,6 +43,24 @@ function sessionsToPrune(sessions, maxSessions = MAX_SESSIONS, maxBytes = MAX_BY
   return doomed;
 }
 
+// How many of a session's oldest entries have to go once it has outgrown the
+// budget. It trims well below the cap, not just under it, so a session
+// sitting at the limit is not re-trimmed on every single write.
+const TRIM_TO = 0.8;
+
+function entriesToTrim(sizes, maxBytes = MAX_BYTES) {
+  let total = (sizes || []).reduce((n, b) => n + b, 0);
+  if (total <= maxBytes) return 0;
+  const target = maxBytes * TRIM_TO;
+  let cut = 0;
+  // The newest entry always stays, however large it is.
+  while (cut < sizes.length - 1 && total > target) {
+    total -= sizes[cut];
+    cut++;
+  }
+  return cut;
+}
+
 function idbReq(req) {
   return new Promise((resolve, reject) => {
     req.onsuccess = () => resolve(req.result);
@@ -135,6 +153,46 @@ async function dbAddEntries(sessionId, batch) {
     sessions.put(session);
   }
   await idbDone(tx);
+  // Pruning only ever drops whole older sessions, so without this a single
+  // long-lived session (an app left open for days) grows without limit.
+  if (session && session.bytes > MAX_BYTES) await dbTrimSession(sessionId);
+}
+
+// Drops a session's oldest entries until it is back inside the byte budget.
+async function dbTrimSession(sessionId, maxBytes = MAX_BYTES) {
+  const db = await dbOpen();
+  const tx = db.transaction(['entries', 'sessions'], 'readwrite');
+  const entries = tx.objectStore('entries');
+  const sessions = tx.objectStore('sessions');
+
+  // Sizes are measured from the rows themselves, not trusted from the
+  // session's running total, and only numbers are kept while walking.
+  const rows = [];
+  await new Promise((resolve, reject) => {
+    const cursorReq = entries.index('sessionId').openCursor(IDBKeyRange.only(sessionId));
+    cursorReq.onerror = () => reject(cursorReq.error);
+    cursorReq.onsuccess = () => {
+      const cursor = cursorReq.result;
+      if (!cursor) return resolve();
+      const d = cursor.value.data;
+      rows.push({ key: cursor.primaryKey, bytes: entryBytes(d), error: !!(d && isError(d)) });
+      cursor.continue();
+    };
+  });
+
+  const cut = entriesToTrim(rows.map((r) => r.bytes), maxBytes);
+  for (const r of rows.slice(0, cut)) entries.delete(r.key);
+
+  const kept = rows.slice(cut);
+  const session = await idbReq(sessions.get(sessionId));
+  if (session) {
+    session.count = kept.length;
+    session.errors = kept.filter((r) => r.error).length;
+    session.bytes = kept.reduce((n, r) => n + r.bytes, 0);
+    sessions.put(session);
+  }
+  await idbDone(tx);
+  return cut;
 }
 
 async function dbListSessions() {
@@ -187,5 +245,5 @@ async function dbPrune() {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { entryBytes, sessionsToPrune, MAX_SESSIONS, MAX_BYTES };
+  module.exports = { entryBytes, sessionsToPrune, entriesToTrim, MAX_SESSIONS, MAX_BYTES };
 }

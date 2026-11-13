@@ -9,27 +9,39 @@ const vm = require('vm');
 function load(extra) {
   const batches = [];
   const timers = [];
+  const listeners = [];
+  const stored = { ...(extra && extra.stored) };
+  const storageWrites = [];
   const quiet = () => {};
   const XHR = function () {};
   XHR.prototype = { open: quiet, send: quiet, setRequestHeader: quiet };
   const sandbox = {
     console: { error: quiet, warn: quiet, info: quiet, log: quiet, debug: quiet },
-    localStorage: { getItem: () => null, setItem: quiet },
+    localStorage: {
+      getItem: (k) => (k in stored ? stored[k] : null),
+      setItem: (k, v) => { storageWrites.push(k); stored[k] = String(v); },
+      removeItem: (k) => { delete stored[k]; },
+    },
     performance: { now: () => 0 },
     location: { href: 'https://x.test/' },
     XMLHttpRequest: XHR,
     URL,
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     clearTimeout: quiet,
-    addEventListener: quiet,
+    addEventListener: (type, fn) => { if (type === 'message') listeners.push(fn); },
     postMessage: (msg) => { batches.push(JSON.parse(JSON.stringify(structuredClone(msg)))); },
   };
-  Object.assign(sandbox, extra);
+  if (extra && extra.fetch) sandbox.fetch = extra.fetch;
   sandbox.window = sandbox;
-  vm.runInNewContext(fs.readFileSync(`${__dirname}/injected.js`, 'utf8'), sandbox);
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(`${__dirname}/injected.js`, 'utf8'), sandbox);
+  // The script compares event.source against its own view of `window`, which
+  // inside a vm context is not the same object as `sandbox` out here.
+  const self = vm.runInContext('window', sandbox);
   const flush = () => { while (timers.length) timers.shift()(); };
   const entries = () => batches.flatMap((b) => b.batch);
-  return { console: sandbox.console, window: sandbox, flush, entries };
+  const config = (data) => listeners.forEach((fn) => fn({ source: self, data: { __netlens_config: true, ...data } }));
+  return { console: sandbox.console, window: sandbox, flush, entries, config, stored, storageWrites };
 }
 
 // 1. A bigint used to reach the ring buffer raw, and runtime messaging then
@@ -115,7 +127,30 @@ function load(extra) {
   assert.ok(log.message.includes('truncated'));
 }
 
-// 7. A fetch the page aborted itself is marked aborted; a real network
+// 7. Settings are never written into the site's own localStorage, and keys an
+//    older version left there are cleaned up
+{
+  const page = load({ stored: { __netlens_max_body: '5242880', __netlens_capture_all_logs: 'false', theirs: 'kept' } });
+  page.config({ maxBody: 1024 * 1024, captureAllLogs: false });
+  page.config({ captureAllLogs: true });
+  assert.deepStrictEqual(page.storageWrites, []);
+  assert.deepStrictEqual(page.stored, { theirs: 'kept' });
+}
+
+// 8. Logs captured before the "errors and warnings only" setting arrived are
+//    dropped if they have not been sent yet; errors and warnings are kept
+{
+  const page = load();
+  page.console.log('early log');
+  page.console.warn('early warn');
+  page.console.error('early error');
+  page.config({ captureAllLogs: false });
+  page.console.info('late info');
+  page.flush();
+  assert.deepStrictEqual(page.entries().map((l) => l.message), ['early warn', 'early error']);
+}
+
+// 9. A fetch the page aborted itself is marked aborted; a real network
 //    failure is not
 (async () => {
   const abortErr = Object.assign(new Error('The user aborted a request.'), { name: 'AbortError' });

@@ -6,6 +6,9 @@
 - Fixed `/regex/g` filters (panel search and toast URL match) matching only every other request.
 - Requests the page cancelled itself (`AbortController`, `xhr.abort()`) are shown as `CANCEL` instead of `ERR`. They no longer count as errors, raise toasts or appear under failed requests.
 - Console capture is cheaper and more faithful: each logged object is walked once instead of twice, with a cap on total size, and getters are no longer run. `Date`, `RegExp`, `Map` and `Set` now show their contents instead of `{}`.
+- Saved history no longer grows without limit during one long session: once a session passes 40 MB its oldest entries are dropped.
+- NetLens no longer stores its settings in each site's `localStorage`, and removes the two keys earlier versions left there.
+- The cross-origin stylesheet fetch used by Inspect CSS now only accepts `http(s)` URLs requested from a tab.
 - `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
 
 ## 7.3
