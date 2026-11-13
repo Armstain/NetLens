@@ -188,7 +188,9 @@ function buildUrlTest(src) {
   if (re) {
     try {
       const compiled = new RegExp(re[1], re[2]);
-      return (url) => compiled.test(url);
+      // A g or y flag makes test() resume from lastIndex, so the same regex
+      // would match one request and miss the next identical one.
+      return (url) => { compiled.lastIndex = 0; return compiled.test(url); };
     } catch {}
   }
   const needle = src.toLowerCase();

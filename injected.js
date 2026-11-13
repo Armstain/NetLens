@@ -176,6 +176,11 @@
     if (val instanceof Error) return `${val.message}\n${val.stack || ''}`;
     if (typeof Element !== 'undefined' && val instanceof Element) return `[${val.tagName}]`;
     if (typeof val === 'function') return `[Function ${val.name || 'anonymous'}]`;
+    // Neither survives the trip to the panel: postMessage cannot clone a
+    // symbol and runtime messaging cannot serialise a bigint, and either one
+    // takes every other capture in the batch (or the whole ring) down with it.
+    if (typeof val === 'bigint') return `${val}n`;
+    if (typeof val === 'symbol') return val.toString();
     if (typeof val !== 'object' || val === null) return val;
     seen = seen || new WeakSet();
     if (seen.has(val)) return '[Circular]';

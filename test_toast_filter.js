@@ -93,4 +93,11 @@ for (const method of TOAST_METHODS) {
 assert.ok(!TOAST_METHODS.includes('OPTIONS'));
 assert.strictEqual(toastMatch({ ...postJson, method: 'OPTIONS' }, on('all')), true); // unlisted verb still passes
 
+// A g or y flag keeps lastIndex between calls; the same URL must keep matching
+for (const src of ['/api/g', '/https/y', '/API/gi']) {
+  const test = buildUrlTest(src);
+  for (let i = 0; i < 4; i++) assert.strictEqual(test('https://x.test/api/users'), true, `${src} call ${i}`);
+}
+assert.strictEqual(buildUrlTest('/orders/g')('https://x.test/api/users'), false);
+
 console.log('toast filter: all assertions passed');
