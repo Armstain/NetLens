@@ -6,23 +6,6 @@
 // edited by the decoder-manager UI) and passed in by the caller rather than
 // held as a module global here, so this file has no mutable state of its own.
 
-function decodeText(encodedText, shift) {
-  if (shift < 1 || shift > 25) return "";
-  let decoded = "";
-  const effectiveShift = 26 - shift;
-  for (let i = 0; i < encodedText.length; i++) {
-    let charCode = encodedText.charCodeAt(i);
-    if (charCode >= 65 && charCode <= 90) {
-      decoded += String.fromCharCode(((charCode - 65 + effectiveShift) % 26) + 65);
-    } else if (charCode >= 97 && charCode <= 122) {
-      decoded += String.fromCharCode(((charCode - 97 + effectiveShift) % 26) + 97);
-    } else {
-      decoded += encodedText.charAt(i);
-    }
-  }
-  return decoded;
-}
-
 function isMostlyPrintable(s) {
   if (!s || !s.length) return false;
   let bad = 0;
@@ -98,13 +81,6 @@ function tryJsonValue(v) {
 
 // step fns take a raw string, return string|object|null (null = doesn't apply)
 const DECODER_STEPS = [
-  { id: 'legacy', label: 'Caesar(9)+LZ', auto: true, fn: (v) => {
-      const t = decodeText(v, 9);
-      const d = LZString.decompressFromEncodedURIComponent(t);
-      if (!d) return null;
-      const parsed = JSON.parse(d);
-      return (parsed && typeof parsed === 'object') ? parsed : null;
-    } },
   { id: 'lzstring', label: 'LZString', auto: true, fn: (v) => {
       const d = LZString.decompressFromEncodedURIComponent(v);
       if (!d) return null;
@@ -308,7 +284,7 @@ function hasDecodableData(d, customDecoders) {
 
 if (typeof module !== 'undefined') {
   module.exports = {
-    decodeText, isMostlyPrintable, b64Decode, b64UrlDecode, hexDecodeStr, jwtDecode,
+    isMostlyPrintable, b64Decode, b64UrlDecode, hexDecodeStr, jwtDecode,
     unicodeEscapeDecode, urlDecodeStr, tryJsonValue, DECODER_STEPS, DECODER_STEP_MAP,
     runChainDecoder, tryDecode, tryParsePartialJson, tryDecodeStructure, hasDecodableData,
   };

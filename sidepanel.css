@@ -746,7 +746,7 @@ body { display: flex; flex-direction: column; }
   padding: 4px 0;
 }
 
-/* Storage viewer */
+/* Drawer sections (shared by the reveal, inspect, palette, diagnostics and history panels) */
 .storage-sections { padding: 10px 12px 12px; }
 .storage-section { margin-bottom: 4px; }
 .storage-section summary {

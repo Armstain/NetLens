@@ -9,6 +9,8 @@
 - Saved history no longer grows without limit during one long session: once a session passes 40 MB its oldest entries are dropped.
 - NetLens no longer stores its settings in each site's `localStorage`, and removes the two keys earlier versions left there.
 - The cross-origin stylesheet fetch used by Inspect CSS now only accepts `http(s)` URLs requested from a tab.
+- Removed the Storage viewer (sessionStorage and cookies). NetLens no longer asks for the `cookies` permission.
+- Removed the built-in "Caesar(9)+LZ" decoder. A saved chain decoder that used it as a step no longer decodes.
 - `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
 
 ## 7.3

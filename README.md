@@ -41,7 +41,7 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 ## Decode
 
 - Query params, path segments, headers, and bodies are auto-scanned and decoded wherever a known encoding is detected
-- Built-in presets: Base64, Base64URL, Hex, JWT, Unicode escapes, URL encoding, LZString, and a legacy Caesar(9)+LZString preset
+- Built-in presets: Base64, Base64URL, Hex, JWT, Unicode escapes, URL encoding and LZString
 - Every request also gets a **Manual Decode** box — paste any value and run it through any preset on demand
 - Click the ⚙ in the top bar to add your own decoders: a **chain** of built-in steps (check the boxes, e.g. Base64 → JSON) for stacked standard encodings, or a **custom JS function** for a proprietary scheme (e.g. a cipher). Custom function decoders run in an isolated Web Worker with no access to the page, tabs, or extension storage. Saved decoders persist across sessions and show up automatically alongside the built-ins
 

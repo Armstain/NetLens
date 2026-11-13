@@ -603,22 +603,6 @@
       buffer = [];
       sendResponse({ ok: true });
     }
-    if (msg.type === 'netlens:storage:get') {
-      const readStore = (store) => {
-        const out = {};
-        try {
-          for (let i = 0; i < store.length; i++) {
-            const key = store.key(i);
-            out[key] = store.getItem(key);
-          }
-        } catch {}
-        return out;
-      };
-      let session = {};
-      try { session = readStore(window.sessionStorage); } catch {}
-      sendResponse({ session });
-      return;
-    }
     if (msg.type === 'netlens:inspect:start') {
       startPicker('inspect');
       sendResponse({ ok: true });

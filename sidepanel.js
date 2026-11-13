@@ -39,7 +39,6 @@
     { key: 'reveal', label: 'Reveal API source', sel: '#revealBtn', panel: 'revealPanel', def: true },
     { key: 'inspect', label: 'Element inspector', sel: '#inspectBtn', panel: 'inspectPanel', def: true },
     { key: 'palette', label: 'Page styles', sel: '#paletteBtn', panel: 'palettePanel', def: true },
-    { key: 'storage', label: 'Storage', sel: '#storageBtn', panel: 'storagePanel', def: false },
     { key: 'diag', label: 'Diagnostics', sel: '#diagBtn', panel: 'diagPanel', def: false },
     { key: 'history', label: 'Saved sessions', sel: '#historyBtn', panel: 'historyPanel', def: true },
     { key: 'count', label: 'Request count', sel: '#count', def: true },
@@ -95,7 +94,7 @@
     });
 
     try {
-      chrome.storage.local.get(['netlensToolbar', 'netlensShowDiag', 'netlensShowStorage'], (res) => {
+      chrome.storage.local.get(['netlensToolbar', 'netlensShowDiag'], (res) => {
         const saved = res && res.netlensToolbar;
         if (saved) {
           for (const item of TOOLBAR_ITEMS) {
@@ -103,7 +102,6 @@
           }
         } else {
           state.diag = !!(res && res.netlensShowDiag);
-          state.storage = !!(res && res.netlensShowStorage);
         }
         apply();
       });
@@ -306,7 +304,7 @@
   }
 
   // ------------------------------------------------------- decoder registry
-  // Pure decode logic (decodeText, DECODER_STEPS, tryDecode, tryDecodeStructure,
+  // Pure decode logic (DECODER_STEPS, tryDecode, tryDecodeStructure,
   // hasDecodableData, ...) lives in decoders.js, loaded before this file.
   // customDecoders stays here — it's UI-owned state (chrome.storage-backed,
   // edited by the decoder-manager panel) — and is passed into those pure
@@ -2617,8 +2615,6 @@
       if (chrome.runtime.lastError || !tab) return;
       currentTabUrl = tab.url;
       requestDump(tabId);
-      const panel = document.getElementById('storagePanel');
-      if (panel && !panel.hidden) loadStorage();
     });
   }
 
@@ -2679,107 +2675,6 @@
   });
 
   clearBtn.addEventListener('click', () => clearAll(true));
-
-  // -------------------------------------------------------- storage viewer
-  const storageBtn = document.getElementById('storageBtn');
-  const storagePanel = document.getElementById('storagePanel');
-  const storagePanelClose = document.getElementById('storagePanelClose');
-  const storageRefreshBtn = document.getElementById('storageRefreshBtn');
-  const storageSectionsEl = document.getElementById('storageSections');
-  const storageOriginEl = document.getElementById('storageOrigin');
-
-  function buildStorageSection(title, items) {
-    const details = document.createElement('details');
-    details.className = 'storage-section';
-    details.open = items.length > 0;
-    const summary = document.createElement('summary');
-    summary.textContent = `${title} (${items.length})`;
-    details.appendChild(summary);
-
-    if (!items.length) {
-      const note = document.createElement('div');
-      note.className = 'note storage-empty';
-      note.textContent = 'No entries.';
-      details.appendChild(note);
-      return details;
-    }
-
-    const table = document.createElement('table');
-    table.className = 'kv decoded-table';
-    for (const item of items) {
-      const tr = document.createElement('tr');
-      const tdKey = document.createElement('td');
-      tdKey.className = 'decoded-key-cell';
-      tdKey.textContent = item.key;
-      if (item.hint) tdKey.title = item.hint;
-
-      const tdVal = document.createElement('td');
-      tdVal.className = 'decoded-val-cell';
-      const pre = document.createElement('pre');
-      pre.className = 'raw';
-      pre.textContent = item.value == null ? '' : String(item.value);
-      tdVal.appendChild(pre);
-
-      const decoded = tryDecodeStructure(item.value, customDecoders);
-      if (decoded) {
-        const badge = document.createElement('div');
-        badge.className = 'decoded-method-label';
-        badge.textContent = `↳ ${decoded.method}`;
-        tdVal.appendChild(badge);
-        tdVal.appendChild(renderValueNode(decoded.value));
-      }
-
-      tr.append(tdKey, tdVal);
-      table.appendChild(tr);
-    }
-    details.appendChild(table);
-    return details;
-  }
-
-  function loadStorage() {
-    if (!storageSectionsEl) return;
-    storageSectionsEl.textContent = '';
-    const loading = document.createElement('div');
-    loading.className = 'note storage-empty';
-    loading.textContent = 'Loading…';
-    storageSectionsEl.appendChild(loading);
-
-    if (storageOriginEl) {
-      try { storageOriginEl.textContent = currentTabUrl ? new URL(currentTabUrl).origin : ''; }
-      catch { storageOriginEl.textContent = currentTabUrl || ''; }
-    }
-
-    if (currentTabId == null) {
-      storageSectionsEl.textContent = '';
-      const note = document.createElement('div');
-      note.className = 'note storage-empty';
-      note.textContent = 'No active tab.';
-      storageSectionsEl.appendChild(note);
-      return;
-    }
-
-    const finish = (sessionItems, cookieItems) => {
-      storageSectionsEl.textContent = '';
-      storageSectionsEl.appendChild(buildStorageSection('Session Storage', sessionItems));
-      storageSectionsEl.appendChild(buildStorageSection('Cookies', cookieItems));
-    };
-
-    chrome.tabs.sendMessage(currentTabId, { type: 'netlens:storage:get' }, (res) => {
-      void chrome.runtime.lastError;
-      const sessionItems = Object.entries(res?.session || {}).map(([key, value]) => ({ key, value }));
-
-      try {
-        chrome.cookies.getAll({ url: currentTabUrl }, (cookies) => {
-          const cookieItems = (cookies || []).map((c) => ({
-            key: c.name,
-            value: c.value,
-            hint: `${c.domain}${c.path}${c.httpOnly ? ' · HttpOnly' : ''}${c.secure ? ' · Secure' : ''}`,
-          }));
-          finish(sessionItems, cookieItems);
-        });
-      } catch { finish(sessionItems, []); }
-    });
-  }
 
   // ------------------------------------------------------------ page styles
   const paletteBtn = document.getElementById('paletteBtn');
@@ -3257,21 +3152,6 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !historyPanel.hidden) closeHistoryPanel();
-    });
-  }
-
-  if (storageBtn && storagePanel) {
-    const openStoragePanel = () => { openSlidePanel(storagePanel); loadStorage(); };
-    const closeStoragePanel = () => closeSlidePanel(storagePanel);
-    slidePanels.push({ el: storagePanel, close: closeStoragePanel });
-
-    storageBtn.addEventListener('click', () => {
-      if (storagePanel.hidden) openStoragePanel(); else closeStoragePanel();
-    });
-    storagePanelClose.addEventListener('click', closeStoragePanel);
-    storageRefreshBtn.addEventListener('click', loadStorage);
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !storagePanel.hidden) closeStoragePanel();
     });
   }
 
