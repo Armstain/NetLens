@@ -1150,16 +1150,29 @@ mark.hl.cur { background: #f59e0b; color: #111; }
   padding: 8px 10px;
 }
 .decoder-chain-steps.input-error { border-color: var(--red); }
-.decoder-step-check {
-  display: flex;
+.decoder-chain-list { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.decoder-chain-arrow { color: var(--faint); font-size: 11px; }
+.decoder-chain-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--text);
-  cursor: pointer;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 2px 3px 2px 6px;
 }
-.decoder-step-check input { accent-color: var(--indigo); cursor: pointer; }
+.decoder-chain-chip button {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 3px;
+}
+.decoder-chain-chip button:hover { color: var(--red); }
+.decoder-chain-add { display: flex; gap: 6px; }
 .decoder-code {
   width: 100%;
   min-height: 70px;

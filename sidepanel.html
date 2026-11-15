@@ -347,7 +347,7 @@
         <div class="decoder-type-group-inner">
           <div class="decoder-hint">Use this if your data is standard encodings stacked together (e.g. Base64 of a JSON string). Not for a made-up cipher — use "Custom JS function" for that.</div>
           <div id="decoderChainSteps" class="decoder-chain-steps"></div>
-          <div class="decoder-hint">Check the steps your data goes through. They run in the order listed above, top to bottom.</div>
+          <div class="decoder-hint">Add steps in the order they undo the encoding, outermost first (e.g. Base64, then LZString). A step can be added more than once.</div>
         </div>
       </div>
       <div id="decoderCodeGroup" class="decoder-type-group is-collapsed">

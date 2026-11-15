@@ -4063,18 +4063,61 @@
   const decoderCodeGroup = document.getElementById('decoderCodeGroup');
   const decoderCodeEl = document.getElementById('decoderCode');
 
-  function buildChainStepCheckboxes() {
+  let chainSteps = [];
+  let chainPick = DECODER_STEPS[0].id;
+
+  function renderChainSteps() {
     if (!decoderChainStepsEl) return;
     decoderChainStepsEl.textContent = '';
-    for (const step of DECODER_STEPS) {
-      const label = document.createElement('label');
-      label.className = 'decoder-step-check';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = step.id;
-      label.append(cb, document.createTextNode(step.label));
-      decoderChainStepsEl.appendChild(label);
+    const list = document.createElement('div');
+    list.className = 'decoder-chain-list';
+    if (!chainSteps.length) {
+      const empty = document.createElement('span');
+      empty.className = 'decoder-hint';
+      empty.textContent = 'No steps yet.';
+      list.appendChild(empty);
     }
+    chainSteps.forEach((id, i) => {
+      if (i) {
+        const arrow = document.createElement('span');
+        arrow.className = 'decoder-chain-arrow';
+        arrow.textContent = '→';
+        list.appendChild(arrow);
+      }
+      const label = DECODER_STEP_MAP[id].label;
+      const chip = document.createElement('span');
+      chip.className = 'decoder-chain-chip';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '✕';
+      remove.setAttribute('aria-label', `Remove step ${i + 1}, ${label}`);
+      remove.addEventListener('click', () => {
+        chainSteps.splice(i, 1);
+        renderChainSteps();
+      });
+      chip.append(`${i + 1}. ${label}`, remove);
+      list.appendChild(chip);
+    });
+
+    const addRow = document.createElement('div');
+    addRow.className = 'decoder-chain-add';
+    const select = document.createElement('select');
+    select.className = 'manual-select';
+    select.setAttribute('aria-label', 'Step to add');
+    for (const step of DECODER_STEPS) select.add(new Option(step.label, step.id));
+    select.value = chainPick;
+    select.addEventListener('change', () => { chainPick = select.value; });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'mini-btn';
+    add.textContent = 'Add step';
+    add.addEventListener('click', () => {
+      chainSteps.push(select.value);
+      decoderChainStepsEl.classList.remove('input-error');
+      renderChainSteps();
+    });
+    addRow.append(select, add);
+    decoderChainStepsEl.append(list, addRow);
   }
 
   function renderDecoderList() {
@@ -4133,7 +4176,7 @@
   }
 
   if (decodersBtn && decoderPanel) {
-    buildChainStepCheckboxes();
+    renderChainSteps();
 
     const openPanel = () => {
       renderDecoderList();
@@ -4173,18 +4216,19 @@
         if (!code) return;
         entry.code = code;
       } else {
-        const steps = Array.from(decoderChainStepsEl.querySelectorAll('input:checked')).map(cb => cb.value);
-        if (!steps.length) {
+        if (!chainSteps.length) {
           decoderChainStepsEl.classList.add('input-error');
           return;
         }
         decoderChainStepsEl.classList.remove('input-error');
-        entry.steps = steps;
+        entry.steps = chainSteps.slice();
       }
       customDecoders.push(entry);
       saveCustomDecoders();
       renderDecoderList();
       decoderForm.reset();
+      chainSteps = [];
+      renderChainSteps();
       decoderChainGroup.classList.remove('is-collapsed');
       decoderCodeGroup.classList.add('is-collapsed');
     });

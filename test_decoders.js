@@ -76,6 +76,9 @@ test('chain runs steps in the given order', () => {
   assert.ok(padded.endsWith('='));
   assert.deepStrictEqual(runChainDecoder(['urlDecode', 'base64'], encodeURIComponent(padded)), { a: 1 });
   assert.deepStrictEqual(runChainDecoder(['base64', 'json'], b64), obj);
+  assert.deepStrictEqual(runChainDecoder(['base64', 'base64'], Buffer.from(b64).toString('base64')), obj);
+  const urlInB64 = Buffer.from(encodeURIComponent(json)).toString('base64');
+  assert.deepStrictEqual(runChainDecoder(['base64', 'urlDecode'], urlInB64), obj);
 });
 
 test('chain with an unknown or failing step returns null', () => {

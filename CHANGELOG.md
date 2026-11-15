@@ -16,6 +16,7 @@
 - Manual Decode ignores surrounding whitespace in pasted values.
 - A saved chain decoder that uses a removed step now says so in the decoder list.
 - The decoder panel no longer claims JS function decoders run automatically; they run from Manual Decode only.
+- Chain decoders are now built step by step in the order they run, and a step can be used more than once (e.g. `Base64 → LZString`, or `Base64 → Base64`). Before, steps always ran in a fixed built-in order.
 - `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
 
 ## 7.3
