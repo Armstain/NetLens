@@ -6,21 +6,27 @@
 // edited by the decoder-manager UI) and passed in by the caller rather than
 // held as a module global here, so this file has no mutable state of its own.
 
-function isMostlyPrintable(s) {
+function isMostlyPrintable(s, asciiOnly = false) {
   if (!s || !s.length) return false;
   let bad = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
-    if (!(c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126))) bad++;
+    if (!(c === 9 || c === 10 || c === 13 || (c >= 32 && c <= 126) || (!asciiOnly && c >= 160 && c !== 0xFFFD))) bad++;
   }
   return bad / s.length < 0.1;
+}
+
+function bytesToText(bin) {
+  try {
+    const s = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, (ch) => ch.charCodeAt(0)));
+    return isMostlyPrintable(s) ? s : null;
+  } catch { return null; }
 }
 
 function b64Decode(str) {
   if (!/^[A-Za-z0-9+/]{8,}={0,2}$/.test(str) || str.length % 4 !== 0) return null;
   try {
-    const bin = atob(str);
-    return isMostlyPrintable(bin) ? bin : null;
+    return bytesToText(atob(str));
   } catch { return null; }
 }
 
@@ -28,8 +34,7 @@ function b64UrlDecode(str) {
   if (!/^[A-Za-z0-9_-]{8,}$/.test(str)) return null;
   const b64 = str.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - str.length % 4) % 4);
   try {
-    const bin = atob(b64);
-    return isMostlyPrintable(bin) ? bin : null;
+    return bytesToText(atob(b64));
   } catch { return null; }
 }
 
@@ -37,7 +42,7 @@ function hexDecodeStr(str) {
   if (!/^[0-9a-fA-F]{8,}$/.test(str) || str.length % 2 !== 0) return null;
   let out = '';
   for (let i = 0; i < str.length; i += 2) out += String.fromCharCode(parseInt(str.substr(i, 2), 16));
-  return isMostlyPrintable(out) ? out : null;
+  return bytesToText(out);
 }
 
 function jwtDecode(str) {
@@ -85,13 +90,13 @@ const DECODER_STEPS = [
       const d = LZString.decompressFromEncodedURIComponent(v);
       if (!d) return null;
       const parsed = tryJsonValue(d);
-      return (typeof parsed === 'string' && !isMostlyPrintable(parsed)) ? null : parsed;
+      return (typeof parsed === 'string' && !isMostlyPrintable(parsed, true)) ? null : parsed;
     } },
   { id: 'jwt', label: 'JWT', auto: true, fn: jwtDecode },
   { id: 'unicodeEscape', label: 'Unicode Escape', auto: true, fn: (v) => { const d = unicodeEscapeDecode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'urlDecode', label: 'URL Decode', auto: true, fn: (v) => { const d = urlDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
-  { id: 'base64url', label: 'Base64URL', auto: true, fn: (v) => { const d = b64UrlDecode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'base64', label: 'Base64', auto: true, fn: (v) => { const d = b64Decode(v); return d == null ? null : tryJsonValue(d); } },
+  { id: 'base64url', label: 'Base64URL', auto: true, fn: (v) => { const d = b64UrlDecode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'hex', label: 'Hex', auto: true, fn: (v) => { const d = hexDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'json', label: 'JSON', auto: false, fn: (v) => {
       const s = v.trim();

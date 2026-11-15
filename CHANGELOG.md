@@ -11,6 +11,8 @@
 - The cross-origin stylesheet fetch used by Inspect CSS now only accepts `http(s)` URLs requested from a tab.
 - Removed the Storage viewer (sessionStorage and cookies). NetLens no longer asks for the `cookies` permission.
 - Removed the built-in "Caesar(9)+LZ" decoder. A saved chain decoder that used it as a step no longer decodes.
+- Base64, Base64URL, Hex and JWT decoding now read text as UTF-8, so accented, CJK and emoji text decodes instead of being rejected or garbled.
+- Standard Base64 values are labelled `Base64` instead of `Base64URL`.
 - `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
 
 ## 7.3
