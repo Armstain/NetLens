@@ -13,6 +13,9 @@
 - Removed the built-in "Caesar(9)+LZ" decoder. A saved chain decoder that used it as a step no longer decodes.
 - Base64, Base64URL, Hex and JWT decoding now read text as UTF-8, so accented, CJK and emoji text decodes instead of being rejected or garbled.
 - Standard Base64 values are labelled `Base64` instead of `Base64URL`.
+- Manual Decode ignores surrounding whitespace in pasted values.
+- A saved chain decoder that uses a removed step now says so in the decoder list.
+- The decoder panel no longer claims JS function decoders run automatically; they run from Manual Decode only.
 - `npm test` runs the unit tests and `npm run test:mcp` the MCP server test; both run in CI on every push.
 
 ## 7.3

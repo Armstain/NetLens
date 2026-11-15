@@ -885,7 +885,7 @@
     output.className = 'manual-output';
 
     runBtn.addEventListener('click', async () => {
-      const val = textarea.value;
+      const val = textarea.value.trim();
       if (!val) return;
       output.textContent = '';
       const [kind, id] = select.value.split(':');
@@ -4091,7 +4091,7 @@
       const row = document.createElement('div');
       row.className = 'decoder-row';
       const label = document.createElement('span');
-      const stepLabels = cd.type === 'chain' ? cd.steps.map(id => (DECODER_STEP_MAP[id] || { label: id }).label) : [];
+      const stepLabels = cd.type === 'chain' ? cd.steps.map(id => DECODER_STEP_MAP[id]?.label || `${id} (removed, delete this decoder)`) : [];
       label.textContent = cd.type === 'function' ? `${cd.name} (JS function)` : `${cd.name} (${stepLabels.join(' → ')})`;
       const del = document.createElement('button');
       del.type = 'button';
