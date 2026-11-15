@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.4
 
 - Fixed a tab's captures becoming unreadable after the page logged a `BigInt`, and captures going missing when it logged a `Symbol`.
 - Fixed `/regex/g` filters (panel search and toast URL match) matching only every other request.
