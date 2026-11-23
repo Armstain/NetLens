@@ -111,3 +111,15 @@ assert.strictEqual(statusClass(aborted), 'aborted');
 assert.strictEqual(statusClass(netFail), 'failed');
 
 console.log('toast filter: all assertions passed');
+
+{
+  const { isApi } = require('./net-format.js');
+  const rsc = { kind: 'fetch', method: 'GET', url: 'https://x.test/?_rsc=1', status: 200, contentType: 'text/x-component' };
+  assert.strictEqual(isApi({ ...rsc, method: 'POST' }), true);
+  assert.strictEqual(isApi(rsc), false);
+  assert.strictEqual(isApi({ ...rsc, contentType: 'application/x-protobuf' }), true);
+  assert.strictEqual(isApi({ ...rsc, contentType: undefined }), true);
+  assert.strictEqual(isApi({ ...rsc, contentType: 'text/html; charset=utf-8' }), true);
+  assert.strictEqual(isApi({ ...rsc, contentType: 'image/png' }), false);
+  assert.strictEqual(isApi({ ...rsc, contentType: 'application/javascript' }), false);
+}

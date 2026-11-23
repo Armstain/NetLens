@@ -46,7 +46,9 @@ function isLog(d) {
 }
 
 function isApi(d) {
-  return /json|xml|graphql|text\/plain/i.test(d.contentType || '');
+  const ct = d.contentType || '';
+  if (/^(image|font|audio|video)\/|text\/css|javascript|ecmascript|wasm|source-?map/i.test(ct)) return false;
+  return !(/text\/x-component/i.test(ct) && d.method === 'GET');
 }
 
 // Hard, measurable signals only — no guessing that request X caused error Y.
