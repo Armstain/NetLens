@@ -4,7 +4,10 @@ global.LZString = require('./lz-string.js');
 const {
   b64Decode, b64UrlDecode, hexDecodeStr, jwtDecode, unicodeEscapeDecode, urlDecodeStr,
   DECODER_STEP_MAP, runChainDecoder, tryDecode, tryDecodeStructure, hasDecodableData,
+  urlMatches, parseStep, chainLabel,
 } = require('./decoders.js');
+
+const pick = (r) => r && { method: r.method, value: r.value };
 
 const obj = { user: 'alice', id: 42 };
 const json = JSON.stringify(obj);
@@ -27,7 +30,7 @@ test('base64url decodes without padding', () => {
 test('url-safe base64 is still labelled Base64URL', () => {
   const urlSafe = Buffer.from('{"k":"??>>"}').toString('base64url');
   assert.match(urlSafe, /[-_]/);
-  assert.deepStrictEqual(tryDecode(urlSafe), { method: 'Base64URL', value: { k: '??>>' } });
+  assert.deepStrictEqual(pick(tryDecode(urlSafe)), { method: 'Base64URL', value: { k: '??>>' } });
 });
 
 test('utf-8 text survives base64, base64url, hex and jwt', () => {
@@ -81,21 +84,61 @@ test('chain runs steps in the given order', () => {
   assert.deepStrictEqual(runChainDecoder(['base64', 'urlDecode'], urlInB64), obj);
 });
 
+test('caesar step takes a shift and chains into lzstring', () => {
+  assert.deepStrictEqual(runChainDecoder(['caesar:9', 'lzstring'], 'W4RpqrKlLVJ0RLVxP0ZJ8CfS4pUxO8p'), { a: 1, b: ['x', 'y'] });
+  assert.strictEqual(DECODER_STEP_MAP.caesar.auto, false);
+  assert.strictEqual(parseStep('caesar').arg, 9);
+  assert.strictEqual(parseStep('caesar:0'), null);
+  assert.strictEqual(parseStep('caesar:26'), null);
+  assert.strictEqual(chainLabel(['caesar:3', 'base64']), 'Caesar shift (3) → Base64');
+});
+
+test('auto decode finds the caesar shift and multi-step chains', () => {
+  assert.deepStrictEqual(tryDecode('W4RpqrKlLVJ0RLVxP0ZJ8CfS4pUxO8p'), { method: 'Caesar shift (9) → LZString', value: { a: 1, b: ['x', 'y'] }, confidence: 'json', steps: ['caesar:9', 'lzstring'] });
+  const nested = Buffer.from(Buffer.from(json).toString('hex')).toString('base64');
+  assert.deepStrictEqual(tryDecode(nested), { method: 'Base64 → Hex', value: obj, confidence: 'json', steps: ['base64', 'hex'] });
+  assert.strictEqual(tryDecode('just-a-plain-slug-value'), null);
+  assert.strictEqual(tryDecode('"W4RpqrKlLVJ0RLVxP0ZJ8CfS4pUxO8p"').method, 'Caesar shift (9) → LZString');
+});
+
 test('chain with an unknown or failing step returns null', () => {
   assert.strictEqual(runChainDecoder(['caesarLz'], b64), null);
+  assert.strictEqual(runChainDecoder(['caesar:99'], b64), null);
   assert.strictEqual(runChainDecoder(['base64', 'caesarLz'], b64), null);
   assert.strictEqual(runChainDecoder(['hex'], b64), null);
 });
 
-test('custom chain wins over built-ins and a broken one falls through', () => {
+test('rules win over auto-detect and a broken one falls through', () => {
   const custom = [{ id: '1', name: 'Mine', type: 'chain', steps: ['base64'] }];
-  assert.deepStrictEqual(tryDecode(b64, custom), { method: 'Mine', value: obj });
+  assert.deepStrictEqual(tryDecode(b64, custom), { method: 'Mine', value: obj, confidence: 'rule', steps: ['base64'], ruleId: '1' });
   const stale = [{ id: '2', name: 'Old', type: 'chain', steps: ['caesarLz'] }];
-  assert.deepStrictEqual(tryDecode(b64, stale), { method: 'Base64', value: obj });
+  assert.deepStrictEqual(pick(tryDecode(b64, stale)), { method: 'Base64', value: obj });
+});
+
+test('rules only apply to matching urls', () => {
+  const rules = [{ id: '1', name: 'Plans', type: 'chain', steps: ['base64'], match: 'api.example.com/plans/*' }];
+  assert.strictEqual(tryDecode(b64, rules, 'https://api.example.com/plans/42?x=1').confidence, 'rule');
+  assert.strictEqual(tryDecode(b64, rules, 'https://other.test/plans/42').confidence, 'json');
+  assert.strictEqual(tryDecode(b64, rules).confidence, 'json');
+});
+
+test('url patterns: substring without *, glob with *', () => {
+  assert.ok(urlMatches('', 'https://a.test/x'));
+  assert.ok(urlMatches('example.com', 'https://api.example.com/v1'));
+  assert.ok(urlMatches('https://api.example.com/v1/*', 'https://api.example.com/v1/users'));
+  assert.ok(urlMatches('*.example.com/*', 'https://api.EXAMPLE.com/v1'));
+  assert.ok(!urlMatches('api.example.com/v1/*', 'https://api.example.com/v2/users'));
+  assert.ok(!urlMatches('example.com', undefined));
+});
+
+test('plain-text results are marked as a guess', () => {
+  const r = tryDecode(Buffer.from('hello there friend').toString('base64'));
+  assert.strictEqual(r.confidence, 'text');
+  assert.strictEqual(r.value, 'hello there friend');
 });
 
 test('auto decode trims and picks the right decoder', () => {
-  assert.deepStrictEqual(tryDecode(`  ${b64}\n`), { method: 'Base64', value: obj });
+  assert.deepStrictEqual(pick(tryDecode(`  ${b64}\n`)), { method: 'Base64', value: obj });
   assert.strictEqual(tryDecode(hex).method, 'Hex');
   assert.strictEqual(tryDecode(encodeURIComponent(json)).method, 'URL Decode');
 });
@@ -112,7 +155,7 @@ test('structure decodes nested values in place', () => {
   const body = JSON.stringify({ a: b64, list: ['plain', hex], nested: { n: 1 } });
   const res = tryDecodeStructure(body);
   assert.strictEqual(res.method, 'JSON Structure');
-  assert.deepStrictEqual(res.value.a, { __decoded: true, method: 'Base64', value: obj });
+  assert.deepStrictEqual(res.value.a, { __decoded: true, method: 'Base64', value: obj, confidence: 'json' });
   assert.strictEqual(res.value.list[0], 'plain');
   assert.strictEqual(res.value.list[1].method, 'Hex');
   assert.deepStrictEqual(res.value.nested, { n: 1 });
@@ -124,4 +167,7 @@ test('hasDecodableData looks at url, bodies and headers', () => {
   assert.strictEqual(hasDecodableData({ url: 'https://x.test/', requestHeaders: { 'x-t': b64 } }), true);
   assert.strictEqual(hasDecodableData({ url: 'https://x.test/a?b=c', responseBody: '{"ok":true}' }), false);
   assert.strictEqual(hasDecodableData({ url: 'not a url' }), false);
+  const fnRule = [{ id: 'f', name: 'Fn', type: 'function', code: 'return input', match: 'x.test/a' }];
+  assert.strictEqual(hasDecodableData({ url: 'https://x.test/a?b=c' }, fnRule), true);
+  assert.strictEqual(hasDecodableData({ url: 'https://y.test/a?b=c' }, fnRule), false);
 });

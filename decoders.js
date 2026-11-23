@@ -76,6 +76,13 @@ function urlDecodeStr(str) {
   } catch { return null; }
 }
 
+function caesarShift(s, n) {
+  return s.replace(/[A-Za-z]/g, (c) => {
+    const b = c <= 'Z' ? 65 : 97;
+    return String.fromCharCode((c.charCodeAt(0) - b + 26 - n) % 26 + b);
+  });
+}
+
 function tryJsonValue(v) {
   if (typeof v !== 'string') return v;
   try {
@@ -98,6 +105,8 @@ const DECODER_STEPS = [
   { id: 'base64', label: 'Base64', auto: true, fn: (v) => { const d = b64Decode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'base64url', label: 'Base64URL', auto: true, fn: (v) => { const d = b64UrlDecode(v); return d == null ? null : tryJsonValue(d); } },
   { id: 'hex', label: 'Hex', auto: true, fn: (v) => { const d = hexDecodeStr(v); return d == null ? null : tryJsonValue(d); } },
+  { id: 'caesar', label: 'Caesar shift', auto: false, arg: { label: 'Shift', min: 1, max: 25, def: 9 },
+    fn: (v, n) => caesarShift(v, n) },
   { id: 'json', label: 'JSON', auto: false, fn: (v) => {
       const s = v.trim();
       if (!s.startsWith('{') && !s.startsWith('[')) return null;
@@ -106,42 +115,117 @@ const DECODER_STEPS = [
 ];
 const DECODER_STEP_MAP = Object.fromEntries(DECODER_STEPS.map(s => [s.id, s]));
 
+function parseStep(ref) {
+  const [id, raw] = String(ref).split(':');
+  const step = DECODER_STEP_MAP[id];
+  if (!step) return null;
+  if (!step.arg) return { step };
+  const n = raw === undefined ? step.arg.def : Number(raw);
+  if (!Number.isInteger(n) || n < step.arg.min || n > step.arg.max) return null;
+  return { step, arg: n };
+}
+
+function stepLabel(ref) {
+  const p = parseStep(ref);
+  if (!p) return null;
+  return p.arg === undefined ? p.step.label : `${p.step.label} (${p.arg})`;
+}
+
+function chainLabel(steps) {
+  return steps.map(s => stepLabel(s) || `${s} (unknown)`).join(' → ');
+}
+
 function runChainDecoder(steps, val) {
   let cur = val;
-  for (const stepId of steps) {
-    const step = DECODER_STEP_MAP[stepId];
-    if (!step) return null;
+  for (const ref of steps) {
+    const p = parseStep(ref);
+    if (!p) return null;
     let out;
-    try { out = step.fn(cur); } catch { return null; }
+    try { out = p.step.fn(cur, p.arg); } catch { return null; }
     if (out == null) return null;
     cur = (typeof out === 'object') ? JSON.stringify(out) : out;
   }
   return tryJsonValue(cur);
 }
 
-function tryDecode(val, customDecoders) {
+function urlMatches(pattern, url) {
+  const p = (pattern || '').trim().replace(/^[a-z]+:\/\//i, '').toLowerCase();
+  if (!p) return true;
+  if (!url) return false;
+  let target;
+  try { const u = new URL(url); target = (u.host + u.pathname).toLowerCase(); } catch { target = String(url).toLowerCase(); }
+  if (!p.includes('*')) return target.includes(p);
+  const re = new RegExp('^' + p.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+  return re.test(target);
+}
+
+function rulesFor(rules, url) {
+  return (rules || []).filter(r => r && urlMatches(r.match, url));
+}
+
+function unwrapJsonString(val) {
+  if (typeof val !== 'string') return val;
+  const t = val.trim();
+  if (t.length > 2 && t.startsWith('"') && t.endsWith('"')) {
+    try { const s = JSON.parse(t); if (typeof s === 'string' && s.trim()) return s.trim(); } catch {}
+  }
+  return t;
+}
+
+function isUsefulResult(result, input) {
+  return result != null && (typeof result === 'object' || (typeof result === 'string' && result !== input && isMostlyPrintable(result)));
+}
+
+function tryDecode(val, rules, url) {
   if (typeof val !== 'string' || !val.trim()) return null;
-  val = val.trim();
+  val = unwrapJsonString(val);
 
-  for (const cd of customDecoders || []) {
-    if (cd.type !== 'chain' || !Array.isArray(cd.steps) || !cd.steps.length) continue;
-    try {
-      const result = runChainDecoder(cd.steps, val);
-      if (result != null && (typeof result === 'object' || (typeof result === 'string' && result !== val && isMostlyPrintable(result)))) {
-        return { method: cd.name || 'Custom', value: result };
+  for (const rule of rulesFor(rules, url)) {
+    if (rule.type !== 'chain' || !Array.isArray(rule.steps) || !rule.steps.length) continue;
+    const result = runChainDecoder(rule.steps, val);
+    if (isUsefulResult(result, val)) {
+      return { method: rule.name || 'Rule', value: result, confidence: 'rule', steps: rule.steps.slice(), ruleId: rule.id };
+    }
+  }
+
+  return autoDecode(val);
+}
+
+const AUTO_MAX_DEPTH = 3;
+const LZ_URI_RE = /^[A-Za-z0-9+\-$]{16,}$/;
+
+function autoDecode(val) {
+  let fallback = null;
+  const hit = (steps, value, confidence) => ({ method: chainLabel(steps), value, confidence, steps });
+  const search = (cur, path, depth) => {
+    for (const step of DECODER_STEPS) {
+      if (!step.auto) continue;
+      let out;
+      try { out = step.fn(cur); } catch { continue; }
+      if (out == null || out === cur) continue;
+      const steps = [...path, step.id];
+      if (typeof out === 'object') return hit(steps, out, 'json');
+      if (!fallback) fallback = hit(steps, out, 'text');
+      if (depth < AUTO_MAX_DEPTH) {
+        const deeper = search(out, steps, depth + 1);
+        if (deeper) return deeper;
       }
-    } catch {}
-  }
+    }
+    return null;
+  };
 
-  for (const step of DECODER_STEPS) {
-    if (!step.auto) continue;
+  const found = search(val, [], 1);
+  if (found) return found;
+
+  const n = (val.charCodeAt(0) - 78 + 26) % 26;
+  if (n && /^[A-Z]/.test(val) && LZ_URI_RE.test(val)) {
     try {
-      const result = step.fn(val);
-      if (result != null) return { method: step.label, value: result };
+      const out = DECODER_STEP_MAP.lzstring.fn(caesarShift(val, n));
+      if (out && typeof out === 'object') return hit([`caesar:${n}`, 'lzstring'], out, 'json');
     } catch {}
   }
 
-  return null;
+  return fallback;
 }
 
 // Repairs bodies cut off at the 200KB capture cap.
@@ -205,7 +289,7 @@ function tryParsePartialJson(str) {
   return null;
 }
 
-function tryDecodeStructure(val, customDecoders) {
+function tryDecodeStructure(val, rules, url) {
   if (typeof val !== 'string') return null;
 
   try {
@@ -229,9 +313,9 @@ function tryDecodeStructure(val, customDecoders) {
             for (let i = 0; i < obj.length; i++) {
               if (checked > MAX_RECURSE_CHECKS) break;
               if (typeof obj[i] === 'string') {
-                const dec = tryDecode(obj[i], customDecoders);
+                const dec = tryDecode(obj[i], rules, url);
                 if (dec) {
-                  obj[i] = { __decoded: true, method: dec.method, value: dec.value };
+                  obj[i] = { __decoded: true, method: dec.method, value: dec.value, confidence: dec.confidence };
                   hasDecoded = true;
                 }
               } else if (obj[i] && typeof obj[i] === 'object') {
@@ -242,9 +326,9 @@ function tryDecodeStructure(val, customDecoders) {
             for (const [k, v] of Object.entries(obj)) {
               if (checked > MAX_RECURSE_CHECKS) break;
               if (typeof v === 'string') {
-                const dec = tryDecode(v, customDecoders);
+                const dec = tryDecode(v, rules, url);
                 if (dec) {
-                  obj[k] = { __decoded: true, method: dec.method, value: dec.value };
+                  obj[k] = { __decoded: true, method: dec.method, value: dec.value, confidence: dec.confidence };
                   hasDecoded = true;
                 }
               } else if (v && typeof v === 'object') {
@@ -263,26 +347,27 @@ function tryDecodeStructure(val, customDecoders) {
     }
   } catch {}
 
-  return tryDecode(val, customDecoders);
+  return tryDecode(val, rules, url);
 }
 
-function hasDecodableData(d, customDecoders) {
+function hasDecodableData(d, rules) {
+  if (rulesFor(rules, d.url).some(r => r.type === 'function' && (r.match || '').trim())) return true;
   try {
     const u = new URL(d.url);
     for (const [, val] of u.searchParams) {
-      if (tryDecodeStructure(val, customDecoders)) return true;
+      if (tryDecodeStructure(val, rules, d.url)) return true;
     }
     for (const val of u.pathname.split('/').filter(Boolean)) {
-      if (tryDecodeStructure(val, customDecoders)) return true;
+      if (tryDecodeStructure(val, rules, d.url)) return true;
     }
   } catch {}
-  if (d.requestBody && tryDecodeStructure(d.requestBody, customDecoders)) return true;
-  if (d.responseBody && tryDecodeStructure(d.responseBody, customDecoders)) return true;
+  if (d.requestBody && tryDecodeStructure(d.requestBody, rules, d.url)) return true;
+  if (d.responseBody && tryDecodeStructure(d.responseBody, rules, d.url)) return true;
   for (const val of Object.values(d.requestHeaders || {})) {
-    if (tryDecodeStructure(val, customDecoders)) return true;
+    if (tryDecodeStructure(val, rules, d.url)) return true;
   }
   for (const val of Object.values(d.responseHeaders || {})) {
-    if (tryDecodeStructure(val, customDecoders)) return true;
+    if (tryDecodeStructure(val, rules, d.url)) return true;
   }
   return false;
 }
@@ -290,7 +375,8 @@ function hasDecodableData(d, customDecoders) {
 if (typeof module !== 'undefined') {
   module.exports = {
     isMostlyPrintable, b64Decode, b64UrlDecode, hexDecodeStr, jwtDecode,
-    unicodeEscapeDecode, urlDecodeStr, tryJsonValue, DECODER_STEPS, DECODER_STEP_MAP,
+    unicodeEscapeDecode, urlDecodeStr, tryJsonValue, caesarShift, autoDecode, DECODER_STEPS, DECODER_STEP_MAP,
+    parseStep, stepLabel, chainLabel, urlMatches, rulesFor, unwrapJsonString, isUsefulResult,
     runChainDecoder, tryDecode, tryParsePartialJson, tryDecodeStructure, hasDecodableData,
   };
 }
