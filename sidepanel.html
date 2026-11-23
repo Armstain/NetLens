@@ -132,10 +132,10 @@
 
       <div class="set-group">
         <div class="set-label-row">
-          <div class="set-label">Custom decoders</div>
+          <div class="set-label">Decoding rules</div>
         </div>
         <div class="set-row">
-          <button type="button" id="openDecodersBtn" class="mini-btn">Manage custom decoders…</button>
+          <button type="button" id="openDecodersBtn" class="mini-btn">Manage decoding rules…</button>
         </div>
       </div>
 
@@ -332,33 +332,43 @@
 
   <div id="decoderPanel" class="decoder-panel" hidden>
     <div class="decoder-panel-head">
-      <span>My Custom Decoders</span>
+      <span>Decoding Rules</span>
       <button id="decoderPanelClose" class="icon-btn" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <p class="decoder-panel-desc">Step chains you save here run automatically next to the built-in ones (Base64, JWT, Hex…). JS functions only run when picked in a request's "Manual Decode" dropdown, where every saved decoder appears.</p>
+    <p class="decoder-panel-desc">NetLens already detects Base64, Base64URL, JWT, Hex, URL and Unicode escapes, LZString and Caesar-shifted LZString by itself. Add a rule when a site uses its own scheme: rules run first, only on requests whose URL matches.</p>
     <div id="decoderList" class="decoder-list"></div>
     <form id="decoderForm" class="decoder-form">
-      <input id="decoderName" type="text" placeholder="Decoder name (e.g. Auth Token)" autocomplete="off" required />
-      <div class="decoder-type-toggle">
-        <label><input type="radio" name="decoderType" value="chain" checked /> Chain of built-in steps</label>
-        <label id="decoderTypeFunction"><input type="radio" name="decoderType" value="function" /> Custom JS function</label>
+      <div id="decoderFormTitle" class="decoder-form-title">New rule</div>
+      <label class="decoder-field"><span>Name</span>
+        <input id="decoderName" type="text" placeholder="e.g. Plans API" autocomplete="off" required />
+      </label>
+      <label class="decoder-field"><span>Applies to</span>
+        <input id="decoderMatch" type="text" placeholder="api.example.com/plans/*" autocomplete="off" spellcheck="false" />
+      </label>
+      <div class="decoder-hint">Part of a URL, or a pattern with * such as <code>*.example.com/api/*</code>. Leave empty to try it on every site.</div>
+      <div class="decoder-type-toggle" role="radiogroup" aria-label="Rule type">
+        <label><input type="radio" name="decoderType" value="chain" checked /> Steps</label>
+        <label id="decoderTypeFunction"><input type="radio" name="decoderType" value="function" /> JS function</label>
       </div>
       <div id="decoderChainGroup" class="decoder-type-group">
         <div class="decoder-type-group-inner">
-          <div class="decoder-hint">Use this if your data is standard encodings stacked together (e.g. Base64 of a JSON string). Not for a made-up cipher — use "Custom JS function" for that.</div>
           <div id="decoderChainSteps" class="decoder-chain-steps"></div>
-          <div class="decoder-hint">Add steps in the order they undo the encoding, outermost first (e.g. Base64, then LZString). A step can be added more than once.</div>
+          <div class="decoder-hint">Add steps in the order they undo the encoding, outermost first (e.g. Caesar shift, then LZString).</div>
         </div>
       </div>
       <div id="decoderCodeGroup" class="decoder-type-group is-collapsed">
         <div class="decoder-type-group-inner">
-          <div class="decoder-hint">Use this for your own scheme (e.g. a Caesar shift). Write a JS function body that takes the raw string as <code>input</code> and <code>return</code>s the decoded value.</div>
-          <textarea id="decoderCode" class="decoder-code" placeholder="return input.split('').reverse().join('');"></textarea>
-          <div class="decoder-hint">Runs in an isolated worker with no access to the page, tabs, or extension storage.</div>
+          <div class="decoder-hint">Function body that receives the raw string as <code>input</code> and <code>return</code>s the decoded value. Runs in an isolated sandbox with no access to the page, tabs or extension storage.</div>
+          <textarea id="decoderCode" class="decoder-code" placeholder="return input.split('').reverse().join('');" spellcheck="false"></textarea>
         </div>
       </div>
+      <label class="decoder-field"><span>Test with a sample</span>
+        <textarea id="decoderSample" class="manual-input" placeholder="Paste a value from a request to preview the result" spellcheck="false"></textarea>
+      </label>
+      <div id="decoderTestOut" class="manual-output" aria-live="polite"></div>
       <div class="decoder-form-actions">
-        <button type="submit" class="mini-btn">Save Decoder</button>
+        <button type="button" id="decoderCancel" class="mini-btn" hidden>Cancel</button>
+        <button type="submit" id="decoderSubmit" class="mini-btn">Save rule</button>
       </div>
     </form>
   </div>

@@ -707,6 +707,14 @@ body { display: flex; flex-direction: column; }
   border-radius: 3px;
   text-transform: uppercase;
 }
+.decoded-method-label.conf-rule { color: var(--emerald); border-color: var(--emerald-deep); }
+.decoded-method-label.conf-json { color: var(--amber); }
+.decoded-method-label.conf-text { color: var(--muted); border-style: dashed; }
+.decoded-heading { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 8px; vertical-align: middle; }
+.decoded-key-cell .decoded-heading { display: flex; margin: 4px 0 0; }
+.manual-output > .decoded-heading { margin: 0 0 6px; }
+.decoded-save-rule { font-size: 10px; padding: 1px 6px; }
+.decoded-rule-source { color: var(--faint); font-family: var(--mono); font-size: 10.5px; margin: 6px 0 3px; }
 .decoded-val-cell {
   vertical-align: top;
 }
@@ -1101,6 +1109,26 @@ mark.hl.cur { background: #f59e0b; color: #111; }
   padding: 6px 8px;
 }
 .decoder-row span { word-break: break-word; }
+.decoder-row.is-editing { border-color: var(--indigo); }
+.decoder-row-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.decoder-row-name { color: var(--text); font-family: var(--sans); font-weight: 600; word-break: break-word; }
+.decoder-row-meta { color: var(--muted); font-size: 10.5px; word-break: break-all; }
+.decoder-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.decoder-form-title { color: var(--text); font-size: 12px; font-weight: 600; }
+.decoder-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.decoder-arg {
+  width: 52px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.decoder-arg:focus { outline: none; border-color: var(--indigo); }
+.decoder-arg.input-error { border-color: var(--red); }
+.decoder-code.input-error { border-color: var(--red); }
 .decoder-form {
   padding: 10px 12px 12px;
   display: flex;
@@ -1187,7 +1215,8 @@ mark.hl.cur { background: #f59e0b; color: #111; }
   transition: border-color 120ms ease;
 }
 .decoder-code:focus { outline: none; border-color: var(--indigo); }
-.decoder-form-actions { display: flex; justify-content: flex-end; }
+.decoder-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.decoder-form-actions .mini-btn[hidden] { display: none; }
 
 /* ------------------------------------------------------------- CSS output */
 .css-rule {

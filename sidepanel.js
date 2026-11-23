@@ -171,7 +171,7 @@
       const u = new URL(url);
       const decodedParams = [];
       for (const [key, val] of u.searchParams.entries()) {
-        const decoded = tryDecodeStructure(val, customDecoders);
+        const decoded = tryDecodeStructure(val, customDecoders, url);
         if (decoded) {
           decodedParams.push({ key, method: decoded.method, value: decoded.value });
         }
@@ -180,7 +180,7 @@
       const segments = u.pathname.split('/').filter(Boolean);
       const decodedSegments = [];
       for (let i = 0; i < segments.length; i++) {
-        const decoded = tryDecodeStructure(segments[i], customDecoders);
+        const decoded = tryDecodeStructure(segments[i], customDecoders, url);
         if (decoded) {
           decodedSegments.push({ key: `Path Segment [${i}]`, method: decoded.method, value: decoded.value });
         }
@@ -310,6 +310,7 @@
   // edited by the decoder-manager panel) — and is passed into those pure
   // functions as an explicit argument at each call site.
   let customDecoders = [];
+  let rulesVersion = 0;
   try {
     chrome.storage.local.get(['netlensCustomDecoders'], (res) => {
       if (res && Array.isArray(res.netlensCustomDecoders)) customDecoders = res.netlensCustomDecoders;
@@ -318,6 +319,7 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.netlensCustomDecoders) {
         customDecoders = changes.netlensCustomDecoders.newValue || [];
+        rulesVersion++;
       }
     });
   } catch {}
@@ -678,79 +680,120 @@
     });
   }
 
+  const CONFIDENCE_INFO = {
+    rule: { prefix: 'Rule: ', title: 'Decoded by one of your rules' },
+    json: { prefix: '', title: 'Auto-detected: decodes to valid JSON' },
+    text: { prefix: 'Possibly ', title: 'Auto-detected guess: decodes to readable text, which can be a coincidence' },
+  };
+
+  function methodBadge(method, confidence) {
+    const span = document.createElement('span');
+    span.className = 'decoded-method-label';
+    const info = CONFIDENCE_INFO[confidence];
+    if (info) {
+      span.classList.add(`conf-${confidence}`);
+      span.title = info.title;
+    }
+    span.textContent = `${info ? info.prefix : ''}${method}`;
+    return span;
+  }
+
+  function suggestedMatch(url) {
+    try {
+      const u = new URL(url);
+      const first = u.pathname.split('/').filter(Boolean)[0];
+      return first ? `${u.host}/${first}/*` : `${u.host}/*`;
+    } catch { return ''; }
+  }
+
+  function saveAsRuleButton(result, url, sample) {
+    if (!result || result.confidence === 'rule' || !Array.isArray(result.steps) || !result.steps.length) return null;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mini-btn decoded-save-rule';
+    btn.textContent = 'Save as rule';
+    btn.title = 'Always decode this site with these steps';
+    btn.addEventListener('click', () => {
+      let host = '';
+      try { host = new URL(url).host; } catch {}
+      openRuleEditor({ name: host ? `${host} decoder` : '', match: suggestedMatch(url), type: 'chain', steps: result.steps }, sample);
+    });
+    return btn;
+  }
+
+  function decodedHeading(item, url) {
+    const wrap = document.createElement('span');
+    wrap.className = 'decoded-heading';
+    if (item.method && item.method !== 'JSON Structure') wrap.appendChild(methodBadge(item.method, item.confidence));
+    const save = saveAsRuleButton(item, url, item.raw);
+    if (save) wrap.appendChild(save);
+    return wrap;
+  }
+
   function renderDecoded(container, d) {
     container.textContent = '';
     const decodedSections = [];
+    const url = d.url;
+    const decode = (raw, key) => {
+      const decoded = tryDecodeStructure(raw, customDecoders, url);
+      return decoded && { key, raw, method: decoded.method, value: decoded.value, confidence: decoded.confidence, steps: decoded.steps };
+    };
+
+    const fnRules = rulesFor(customDecoders, url).filter(r => r.type === 'function' && (r.match || '').trim());
+    if (fnRules.length) {
+      const host = document.createElement('div');
+      container.appendChild(host);
+      renderFunctionRules(host, d, fnRules);
+    }
 
     try {
-      const u = new URL(d.url);
-      
-      const params = Array.from(u.searchParams.entries());
+      const u = new URL(url);
       const decodedParams = [];
-      for (const [key, val] of params) {
-        const decoded = tryDecodeStructure(val, customDecoders);
-        if (decoded) {
-          decodedParams.push({ key, method: decoded.method, value: decoded.value });
-        }
+      for (const [key, val] of u.searchParams.entries()) {
+        const item = decode(val, key);
+        if (item) decodedParams.push(item);
       }
-      if (decodedParams.length > 0) {
-        decodedSections.push({ title: 'Query Parameters', items: decodedParams });
-      }
+      if (decodedParams.length) decodedSections.push({ title: 'Query Parameters', items: decodedParams });
 
       const segments = u.pathname.split('/').filter(Boolean);
       const decodedSegments = [];
       for (let i = 0; i < segments.length; i++) {
-        const decoded = tryDecodeStructure(segments[i], customDecoders);
-        if (decoded) {
-          decodedSegments.push({ key: `Path Segment [${i}]`, method: decoded.method, value: decoded.value });
-        }
+        const item = decode(segments[i], `Path Segment [${i}]`);
+        if (item) decodedSegments.push(item);
       }
-      if (decodedSegments.length > 0) {
-        decodedSections.push({ title: 'URL Path Segments', items: decodedSegments });
-      }
+      if (decodedSegments.length) decodedSections.push({ title: 'URL Path Segments', items: decodedSegments });
     } catch {}
 
     if (d.requestBody) {
-      const decoded = tryDecodeStructure(d.requestBody, customDecoders);
-      if (decoded) {
-        decodedSections.push({
-          title: 'Request Body',
-          items: [{ key: 'Body', method: decoded.method, value: decoded.value }]
-        });
-      }
+      const item = decode(d.requestBody, 'Body');
+      if (item) decodedSections.push({ title: 'Request Body', items: [item] });
     }
-
     if (d.responseBody) {
-      const decoded = tryDecodeStructure(d.responseBody, customDecoders);
-      if (decoded) {
-        decodedSections.push({
-          title: 'Response Body',
-          items: [{ key: 'Body', method: decoded.method, value: decoded.value }]
-        });
-      }
+      const item = decode(d.responseBody, 'Body');
+      if (item) decodedSections.push({ title: 'Response Body', items: [item] });
     }
 
     const decodedHeaders = [];
-    const checkHeaders = (headers, type) => {
+    for (const [headers, type] of [[d.requestHeaders, 'Request'], [d.responseHeaders, 'Response']]) {
       for (const [k, v] of Object.entries(headers || {})) {
-        const decoded = tryDecodeStructure(v, customDecoders);
-        if (decoded) {
-          decodedHeaders.push({ key: `${type}: ${k}`, method: decoded.method, value: decoded.value });
-        }
+        const item = decode(v, `${type}: ${k}`);
+        if (item) decodedHeaders.push(item);
       }
-    };
-    checkHeaders(d.requestHeaders, 'Request');
-    checkHeaders(d.responseHeaders, 'Response');
-    if (decodedHeaders.length > 0) {
-      decodedSections.push({ title: 'Headers', items: decodedHeaders });
     }
+    if (decodedHeaders.length) decodedSections.push({ title: 'Headers', items: decodedHeaders });
 
-    if (decodedSections.length === 0) {
+    if (!decodedSections.length && !fnRules.length) {
       const note = document.createElement('div');
       note.className = 'note';
-      note.textContent = 'No encoded data detected.';
+      note.textContent = 'No encoded data detected. Paste a value below to try it by hand.';
       container.appendChild(note);
     }
+
+    const toRenderable = (value) => {
+      if (typeof value !== 'string') return value;
+      const p = parseBody(value);
+      return (p && typeof p === 'object') ? p : value;
+    };
 
     for (const sec of decodedSections) {
       const secTitle = document.createElement('div');
@@ -759,96 +802,80 @@
 
       if (sec.items.length === 1 && sec.items[0].key === 'Body') {
         const item = sec.items[0];
-        if (item.method && item.method !== 'JSON Structure') {
-          const methodSpan = document.createElement('span');
-          methodSpan.className = 'decoded-method-label';
-          methodSpan.style.marginTop = '0';
-          methodSpan.style.marginLeft = '8px';
-          methodSpan.textContent = item.method;
-          secTitle.appendChild(methodSpan);
-        }
-        container.appendChild(secTitle);
-
-        let valToRender = item.value;
-        if (typeof valToRender === 'string') {
-          const p = parseBody(valToRender);
-          if (p && typeof p === 'object') valToRender = p;
-        }
-
-        if (typeof valToRender === 'object' && valToRender !== null) {
-          const tree = document.createElement('div');
-          tree.className = 'jtree';
-          const root = jsonNode(null, valToRender, false);
-          if (root.tagName === 'DETAILS') root.open = true;
-          tree.appendChild(root);
-          container.appendChild(tree);
-        } else {
-          const pre = document.createElement('pre');
-          pre.className = 'raw';
-          pre.textContent = String(valToRender);
-          container.appendChild(pre);
-        }
+        secTitle.appendChild(decodedHeading(item, url));
+        container.append(secTitle, renderValueNode(toRenderable(item.value)));
         continue;
       }
 
       container.appendChild(secTitle);
-
       const table = document.createElement('table');
       table.className = 'kv decoded-table';
-
       for (const item of sec.items) {
         const tr = document.createElement('tr');
-        
         const tdKey = document.createElement('td');
         tdKey.className = 'decoded-key-cell';
         const keySpan = document.createElement('span');
         keySpan.textContent = item.key;
-        tdKey.appendChild(keySpan);
-
-        if (item.method && item.method !== 'JSON Structure') {
-          const methodSpan = document.createElement('span');
-          methodSpan.className = 'decoded-method-label';
-          methodSpan.textContent = item.method;
-          tdKey.append(document.createElement('br'), methodSpan);
-        }
-
+        tdKey.append(keySpan, decodedHeading(item, url));
         const tdVal = document.createElement('td');
         tdVal.className = 'decoded-val-cell';
-        
-        let valToRender = item.value;
-        if (typeof valToRender === 'string') {
-          const p = parseBody(valToRender);
-          if (p && typeof p === 'object') valToRender = p;
-        }
-
-        if (typeof valToRender === 'object' && valToRender !== null) {
-          const tree = document.createElement('div');
-          tree.className = 'jtree';
-          const root = jsonNode(null, valToRender, false);
-          if (root.tagName === 'DETAILS') root.open = true;
-          tree.appendChild(root);
-          tdVal.appendChild(tree);
-        } else {
-          const pre = document.createElement('pre');
-          pre.className = 'raw';
-          pre.textContent = String(valToRender);
-          tdVal.appendChild(pre);
-        }
-        
+        tdVal.appendChild(renderValueNode(toRenderable(item.value)));
         tr.append(tdKey, tdVal);
         table.appendChild(tr);
       }
       container.appendChild(table);
     }
 
-    appendManualDecodePanel(container);
+    appendManualDecodePanel(container, d);
   }
 
-  function appendManualDecodePanel(container) {
+  async function renderFunctionRules(host, d, rules) {
+    const inputs = [];
+    if (d.responseBody) inputs.push(['Response Body', d.responseBody]);
+    if (d.requestBody) inputs.push(['Request Body', d.requestBody]);
+    try {
+      for (const [k, v] of new URL(d.url).searchParams.entries()) inputs.push([`Query: ${k}`, v]);
+    } catch {}
+
+    for (const rule of rules) {
+      const title = document.createElement('div');
+      title.className = 'decoded-section-title';
+      title.textContent = 'Your rule';
+      title.appendChild(methodBadge(rule.name, 'rule'));
+      const body = document.createElement('div');
+      const status = document.createElement('div');
+      status.className = 'note';
+      status.textContent = 'Running…';
+      body.appendChild(status);
+      host.append(title, body);
+
+      let hits = 0;
+      for (const [label, raw] of inputs) {
+        const input = unwrapJsonString(raw);
+        let result;
+        try { result = await runCustomFunction(rule.code, input); } catch (err) {
+          status.className = 'manual-error';
+          status.textContent = `Rule failed: ${err.message || err}`;
+          hits = -1;
+          break;
+        }
+        if (!isUsefulResult(result, input)) continue;
+        hits++;
+        const where = document.createElement('div');
+        where.className = 'decoded-rule-source';
+        where.textContent = label;
+        body.append(where, renderValueNode(result));
+      }
+      if (hits === 0) status.textContent = 'This rule matched the URL but produced nothing for this request.';
+      else if (hits > 0) status.remove();
+    }
+  }
+
+  function appendManualDecodePanel(container, d) {
     const details = document.createElement('details');
     details.className = 'manual-decode';
     const summary = document.createElement('summary');
-    summary.textContent = 'Manual Decode';
+    summary.textContent = 'Decode a value by hand';
     details.appendChild(summary);
 
     const inner = document.createElement('div');
@@ -857,24 +884,42 @@
     const textarea = document.createElement('textarea');
     textarea.className = 'manual-input';
     textarea.placeholder = 'Paste a value to decode…';
+    textarea.spellcheck = false;
 
     const controls = document.createElement('div');
     controls.className = 'manual-controls';
 
     const select = document.createElement('select');
     select.className = 'manual-select';
-    for (const step of DECODER_STEPS) {
-      const opt = document.createElement('option');
-      opt.value = `builtin:${step.id}`;
-      opt.textContent = step.label;
-      select.appendChild(opt);
+    select.setAttribute('aria-label', 'Decoder');
+    select.add(new Option('Auto detect', 'auto:'));
+    const stepGroup = document.createElement('optgroup');
+    stepGroup.label = 'Single step';
+    for (const step of DECODER_STEPS) stepGroup.appendChild(new Option(step.label, `builtin:${step.id}`));
+    select.appendChild(stepGroup);
+    if (customDecoders.length) {
+      const ruleGroup = document.createElement('optgroup');
+      ruleGroup.label = 'Your rules';
+      for (const cd of customDecoders) ruleGroup.appendChild(new Option(cd.name, `custom:${cd.id}`));
+      select.appendChild(ruleGroup);
     }
-    for (const cd of customDecoders) {
-      const opt = document.createElement('option');
-      opt.value = `custom:${cd.id}`;
-      opt.textContent = `${cd.name} (custom)`;
-      select.appendChild(opt);
-    }
+
+    const argInput = document.createElement('input');
+    argInput.type = 'number';
+    argInput.className = 'decoder-arg';
+    argInput.hidden = true;
+    select.addEventListener('change', () => {
+      const [kind, id] = select.value.split(':');
+      const step = kind === 'builtin' && DECODER_STEP_MAP[id];
+      argInput.hidden = !(step && step.arg);
+      if (step && step.arg) {
+        argInput.min = step.arg.min;
+        argInput.max = step.arg.max;
+        argInput.value = step.arg.def;
+        argInput.setAttribute('aria-label', step.arg.label);
+        argInput.title = step.arg.label;
+      }
+    });
 
     const runBtn = document.createElement('button');
     runBtn.type = 'button';
@@ -883,42 +928,43 @@
 
     const output = document.createElement('div');
     output.className = 'manual-output';
+    output.setAttribute('aria-live', 'polite');
 
     runBtn.addEventListener('click', async () => {
-      const val = textarea.value.trim();
-      if (!val) return;
+      const raw = textarea.value.trim();
+      if (!raw) return;
+      const val = unwrapJsonString(raw);
       output.textContent = '';
       const [kind, id] = select.value.split(':');
       runBtn.disabled = true;
       try {
         let result;
-        if (kind === 'builtin') {
-          result = DECODER_STEP_MAP[id].fn(val);
-          if (result == null) throw new Error('Decoder produced no output for this input.');
+        if (kind === 'auto') {
+          const found = tryDecodeStructure(val, customDecoders, d && d.url);
+          if (!found) throw new Error('Nothing recognised. If this site uses its own scheme, add a rule for it.');
+          const head = document.createElement('div');
+          head.className = 'decoded-heading';
+          head.appendChild(methodBadge(found.method, found.confidence));
+          const save = saveAsRuleButton(found, d && d.url, raw);
+          if (save) head.appendChild(save);
+          output.appendChild(head);
+          result = found.value;
+        } else if (kind === 'builtin') {
+          const step = DECODER_STEP_MAP[id];
+          result = runChainDecoder([step.arg ? `${id}:${argInput.value}` : id], val);
+          if (!isUsefulResult(result, val)) throw new Error(`${step.label} produced nothing for this input.`);
         } else {
           const cd = customDecoders.find(c => c.id === id);
-          if (!cd) throw new Error('Decoder not found.');
+          if (!cd) throw new Error('Rule not found.');
           if (cd.type === 'function') {
             runBtn.textContent = 'Decoding…';
             result = await runCustomFunction(cd.code, val);
           } else {
             result = runChainDecoder(cd.steps, val);
-            if (result == null) throw new Error('Chain produced no output for this input.');
           }
+          if (!isUsefulResult(result, val)) throw new Error(`"${cd.name}" produced nothing for this input.`);
         }
-        if (typeof result === 'object' && result !== null) {
-          const tree = document.createElement('div');
-          tree.className = 'jtree';
-          const root = jsonNode(null, result, true);
-          if (root.tagName === 'DETAILS') root.open = true;
-          tree.appendChild(root);
-          output.appendChild(tree);
-        } else {
-          const pre = document.createElement('pre');
-          pre.className = 'raw';
-          pre.textContent = String(result);
-          output.appendChild(pre);
-        }
+        output.appendChild(renderValueNode(result));
       } catch (err) {
         const errEl = document.createElement('div');
         errEl.className = 'manual-error';
@@ -930,7 +976,7 @@
       }
     });
 
-    controls.append(select, runBtn);
+    controls.append(select, argInput, runBtn);
     inner.append(textarea, controls, output);
     details.appendChild(inner);
     container.appendChild(details);
@@ -991,11 +1037,9 @@
           sum.appendChild(k);
         }
         
-        const badge = document.createElement('span');
-        badge.className = 'decoded-method-label';
+        const badge = methodBadge(value.method, value.confidence);
         badge.style.marginTop = '0';
         badge.style.marginLeft = '6px';
-        badge.textContent = value.method;
         sum.appendChild(badge);
         det.appendChild(sum);
         
@@ -1767,8 +1811,9 @@
         if (activeName === 'Stream' && body.isConnected) renderView('Stream', body);
       };
     }
-    if (d.__hasDecoded === undefined) {
+    if (d.__hasDecoded === undefined || d.__decodedRulesVersion !== rulesVersion) {
       d.__hasDecoded = hasDecodableData(d, customDecoders);
+      d.__decodedRulesVersion = rulesVersion;
     }
     if (d.__hasDecoded) {
       views.Decoded = () => renderView('Decoded', body);
@@ -4057,14 +4102,33 @@
   const decoderPanelClose = document.getElementById('decoderPanelClose');
   const decoderListEl = document.getElementById('decoderList');
   const decoderForm = document.getElementById('decoderForm');
+  const decoderFormTitle = document.getElementById('decoderFormTitle');
   const decoderNameEl = document.getElementById('decoderName');
+  const decoderMatchEl = document.getElementById('decoderMatch');
   const decoderChainGroup = document.getElementById('decoderChainGroup');
   const decoderChainStepsEl = document.getElementById('decoderChainSteps');
   const decoderCodeGroup = document.getElementById('decoderCodeGroup');
   const decoderCodeEl = document.getElementById('decoderCode');
+  const decoderSampleEl = document.getElementById('decoderSample');
+  const decoderTestOut = document.getElementById('decoderTestOut');
+  const decoderCancelBtn = document.getElementById('decoderCancel');
+  const decoderSubmitBtn = document.getElementById('decoderSubmit');
+  const fnRulesSupported = typeof browser === 'undefined';
 
   let chainSteps = [];
   let chainPick = DECODER_STEPS[0].id;
+  let editingRuleId = null;
+
+  function ruleType() {
+    return decoderForm.decoderType.value;
+  }
+
+  function setRuleType(type) {
+    decoderForm.decoderType.value = type;
+    const isFn = type === 'function';
+    decoderChainGroup.classList.toggle('is-collapsed', isFn);
+    decoderCodeGroup.classList.toggle('is-collapsed', !isFn);
+  }
 
   function renderChainSteps() {
     if (!decoderChainStepsEl) return;
@@ -4077,14 +4141,14 @@
       empty.textContent = 'No steps yet.';
       list.appendChild(empty);
     }
-    chainSteps.forEach((id, i) => {
+    chainSteps.forEach((ref, i) => {
       if (i) {
         const arrow = document.createElement('span');
         arrow.className = 'decoder-chain-arrow';
         arrow.textContent = '→';
         list.appendChild(arrow);
       }
-      const label = DECODER_STEP_MAP[id].label;
+      const label = stepLabel(ref) || `${ref} (unknown)`;
       const chip = document.createElement('span');
       chip.className = 'decoder-chain-chip';
       const remove = document.createElement('button');
@@ -4094,6 +4158,7 @@
       remove.addEventListener('click', () => {
         chainSteps.splice(i, 1);
         renderChainSteps();
+        scheduleRuleTest();
       });
       chip.append(`${i + 1}. ${label}`, remove);
       list.appendChild(chip);
@@ -4106,17 +4171,40 @@
     select.setAttribute('aria-label', 'Step to add');
     for (const step of DECODER_STEPS) select.add(new Option(step.label, step.id));
     select.value = chainPick;
-    select.addEventListener('change', () => { chainPick = select.value; });
+    const argInput = document.createElement('input');
+    argInput.type = 'number';
+    argInput.className = 'decoder-arg';
+    const syncArg = () => {
+      const step = DECODER_STEP_MAP[select.value];
+      argInput.hidden = !step.arg;
+      if (step.arg) {
+        argInput.min = step.arg.min;
+        argInput.max = step.arg.max;
+        argInput.value = step.arg.def;
+        argInput.setAttribute('aria-label', step.arg.label);
+        argInput.title = step.arg.label;
+      }
+    };
+    syncArg();
+    select.addEventListener('change', () => { chainPick = select.value; syncArg(); });
     const add = document.createElement('button');
     add.type = 'button';
     add.className = 'mini-btn';
     add.textContent = 'Add step';
     add.addEventListener('click', () => {
-      chainSteps.push(select.value);
+      const step = DECODER_STEP_MAP[select.value];
+      const ref = step.arg ? `${step.id}:${argInput.value}` : step.id;
+      if (!parseStep(ref)) {
+        argInput.classList.add('input-error');
+        return;
+      }
+      argInput.classList.remove('input-error');
+      chainSteps.push(ref);
       decoderChainStepsEl.classList.remove('input-error');
       renderChainSteps();
+      scheduleRuleTest();
     });
-    addRow.append(select, add);
+    addRow.append(select, argInput, add);
     decoderChainStepsEl.append(list, addRow);
   }
 
@@ -4126,28 +4214,132 @@
     if (!customDecoders.length) {
       const note = document.createElement('div');
       note.className = 'note';
-      note.textContent = 'No custom decoders yet.';
+      note.textContent = 'No rules yet. Auto-detect still runs on every request.';
       decoderListEl.appendChild(note);
       return;
     }
     for (const cd of customDecoders) {
       const row = document.createElement('div');
       row.className = 'decoder-row';
-      const label = document.createElement('span');
-      const stepLabels = cd.type === 'chain' ? cd.steps.map(id => DECODER_STEP_MAP[id]?.label || `${id} (removed, delete this decoder)`) : [];
-      label.textContent = cd.type === 'function' ? `${cd.name} (JS function)` : `${cd.name} (${stepLabels.join(' → ')})`;
+      if (cd.id === editingRuleId) row.classList.add('is-editing');
+      const info = document.createElement('div');
+      info.className = 'decoder-row-info';
+      const name = document.createElement('div');
+      name.className = 'decoder-row-name';
+      name.textContent = cd.name;
+      const scope = document.createElement('div');
+      scope.className = 'decoder-row-meta';
+      scope.textContent = (cd.match || '').trim() ? `Applies to ${cd.match.trim()}` : 'Applies to every site';
+      const how = document.createElement('div');
+      how.className = 'decoder-row-meta';
+      how.textContent = cd.type === 'function' ? 'JS function' : chainLabel(cd.steps || []);
+      info.append(name, scope, how);
+
+      const actions = document.createElement('div');
+      actions.className = 'decoder-row-actions';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'mini-btn';
+      edit.textContent = 'Edit';
+      edit.setAttribute('aria-label', `Edit rule ${cd.name}`);
+      edit.addEventListener('click', () => loadRuleIntoForm(cd));
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'mini-btn danger';
       del.textContent = 'Delete';
+      del.setAttribute('aria-label', `Delete rule ${cd.name}`);
       del.addEventListener('click', () => {
         customDecoders = customDecoders.filter(x => x.id !== cd.id);
         saveCustomDecoders();
+        if (editingRuleId === cd.id) resetRuleForm();
         renderDecoderList();
       });
-      row.append(label, del);
+      actions.append(edit, del);
+      row.append(info, actions);
       decoderListEl.appendChild(row);
     }
+  }
+
+  function resetRuleForm() {
+    editingRuleId = null;
+    decoderForm.reset();
+    chainSteps = [];
+    setRuleType('chain');
+    decoderFormTitle.textContent = 'New rule';
+    decoderSubmitBtn.textContent = 'Save rule';
+    decoderCancelBtn.hidden = true;
+    decoderNameEl.classList.remove('input-error');
+    decoderChainStepsEl.classList.remove('input-error');
+    decoderCodeEl.classList.remove('input-error');
+    decoderTestOut.textContent = '';
+    renderChainSteps();
+  }
+
+  function loadRuleIntoForm(rule, { sample = '' } = {}) {
+    resetRuleForm();
+    editingRuleId = rule.id || null;
+    decoderNameEl.value = rule.name || '';
+    decoderMatchEl.value = rule.match || '';
+    setRuleType(rule.type === 'function' && fnRulesSupported ? 'function' : 'chain');
+    chainSteps = Array.isArray(rule.steps) ? rule.steps.slice() : [];
+    decoderCodeEl.value = rule.code || '';
+    decoderSampleEl.value = sample;
+    if (editingRuleId) {
+      decoderFormTitle.textContent = `Editing "${rule.name}"`;
+      decoderSubmitBtn.textContent = 'Update rule';
+      decoderCancelBtn.hidden = false;
+    }
+    renderChainSteps();
+    renderDecoderList();
+    runRuleTest();
+  }
+
+  function openRuleEditor(prefill, sample) {
+    if (!decoderPanel) return;
+    if (decoderPanel.hidden) openSlidePanel(decoderPanel);
+    if (prefill) loadRuleIntoForm(prefill, { sample });
+    else renderDecoderList();
+    requestAnimationFrame(() => decoderNameEl.focus());
+  }
+
+  let ruleTestTimer = null;
+  let ruleTestSeq = 0;
+  function scheduleRuleTest() {
+    clearTimeout(ruleTestTimer);
+    ruleTestTimer = setTimeout(runRuleTest, 250);
+  }
+
+  async function runRuleTest() {
+    const seq = ++ruleTestSeq;
+    const raw = decoderSampleEl.value;
+    decoderTestOut.textContent = '';
+    if (!raw.trim()) return;
+    const input = unwrapJsonString(raw);
+    let result;
+    try {
+      if (ruleType() === 'function') {
+        const code = decoderCodeEl.value.trim();
+        if (!code) return showRuleTest('Write a function to test it.');
+        result = await runCustomFunction(code, input);
+      } else {
+        if (!chainSteps.length) return showRuleTest('Add a step to test it.');
+        result = runChainDecoder(chainSteps, input);
+      }
+    } catch (err) {
+      if (seq === ruleTestSeq) showRuleTest(err.message || String(err));
+      return;
+    }
+    if (seq !== ruleTestSeq) return;
+    if (!isUsefulResult(result, input)) return showRuleTest('This rule produces nothing for the sample.');
+    decoderTestOut.appendChild(renderValueNode(result));
+  }
+
+  function showRuleTest(msg) {
+    const el = document.createElement('div');
+    el.className = 'manual-error';
+    el.textContent = msg;
+    decoderTestOut.textContent = '';
+    decoderTestOut.appendChild(el);
   }
 
   const settingsBtn = document.getElementById('settingsBtn');
@@ -4195,24 +4387,36 @@
 
     // Firefox (the only browser defining `browser`) ignores manifest sandbox
     // pages, so runCustomFunction has nowhere to eval.
-    if (typeof browser !== 'undefined') document.getElementById('decoderTypeFunction').hidden = true;
+    if (!fnRulesSupported) document.getElementById('decoderTypeFunction').hidden = true;
 
     decoderForm.querySelectorAll('input[name="decoderType"]').forEach((radio) => {
       radio.addEventListener('change', () => {
-        const isFn = decoderForm.decoderType.value === 'function';
-        decoderChainGroup.classList.toggle('is-collapsed', isFn);
-        decoderCodeGroup.classList.toggle('is-collapsed', !isFn);
+        setRuleType(ruleType());
+        scheduleRuleTest();
       });
+    });
+    decoderSampleEl.addEventListener('input', scheduleRuleTest);
+    decoderCodeEl.addEventListener('input', scheduleRuleTest);
+    decoderCancelBtn.addEventListener('click', () => {
+      resetRuleForm();
+      renderDecoderList();
     });
 
     decoderForm.addEventListener('submit', (e) => {
       e.preventDefault();
       const name = decoderNameEl.value.trim();
+      decoderNameEl.classList.toggle('input-error', !name);
       if (!name) return;
-      const type = decoderForm.decoderType.value;
-      const entry = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, type };
+      const type = ruleType();
+      const entry = {
+        id: editingRuleId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        type,
+        match: decoderMatchEl.value.trim(),
+      };
       if (type === 'function') {
         const code = decoderCodeEl.value.trim();
+        decoderCodeEl.classList.toggle('input-error', !code);
         if (!code) return;
         entry.code = code;
       } else {
@@ -4223,14 +4427,11 @@
         decoderChainStepsEl.classList.remove('input-error');
         entry.steps = chainSteps.slice();
       }
-      customDecoders.push(entry);
+      const idx = customDecoders.findIndex(x => x.id === entry.id);
+      if (idx >= 0) customDecoders[idx] = entry; else customDecoders.push(entry);
       saveCustomDecoders();
+      resetRuleForm();
       renderDecoderList();
-      decoderForm.reset();
-      chainSteps = [];
-      renderChainSteps();
-      decoderChainGroup.classList.remove('is-collapsed');
-      decoderCodeGroup.classList.add('is-collapsed');
     });
   }
 
