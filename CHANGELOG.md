@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Decoders are now **decoding rules**: each one can be limited to a URL pattern, and can be edited instead of only deleted. The rule form previews its result live on a pasted sample.
+- Auto-detect tries stacks of up to three encodings and keeps the one that decodes to JSON, instead of stopping at the first decoder that returns anything.
+- Auto-detect finds Caesar-shifted LZString payloads and works out the shift itself.
+- New **Caesar shift** step with a configurable shift (1-25).
+- Decoded results show how sure they are: `Rule: …`, a plain label for valid JSON, or `Possibly …` for plain-text guesses.
+- **Save as rule** on any auto-detected result opens the rule form prefilled with its steps, site and sample.
+- JS function rules with a URL pattern run automatically in the Decoded tab.
+- Values wrapped in JSON quotes (a response body that is just a string) are unwrapped before decoding.
+- Manual Decode defaults to Auto detect.
+
 ## 7.4
 
 - Fixed a tab's captures becoming unreadable after the page logged a `BigInt`, and captures going missing when it logged a `Symbol`.

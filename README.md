@@ -40,10 +40,12 @@ See your page's API calls  payloads, responses, headers  in a Chrome side panel.
 
 ## Decode
 
-- Query params, path segments, headers, and bodies are auto-scanned and decoded wherever a known encoding is detected
-- Built-in presets: Base64, Base64URL, Hex, JWT, Unicode escapes, URL encoding and LZString
-- Every request also gets a **Manual Decode** box — paste any value and run it through any preset on demand
-- Click the ⚙ in the top bar to add your own decoders: a **chain** of built-in steps (check the boxes, e.g. Base64 → JSON) for stacked standard encodings, or a **custom JS function** for a proprietary scheme (e.g. a cipher). Custom function decoders run in an isolated Web Worker with no access to the page, tabs, or extension storage. Saved decoders persist across sessions and show up automatically alongside the built-ins
+- Query params, path segments, headers, and bodies are auto-scanned. Auto-detect tries stacks of up to three encodings (e.g. `Base64 → Hex`) plus Caesar-shifted LZString, and works out the shift by itself
+- Built-in steps: Base64, Base64URL, Hex, JWT, Unicode escapes, URL encoding, LZString, Caesar shift (any shift 1-25) and JSON
+- Each result is labelled by how sure it is: **Rule: …** (one of your rules), a plain label (decoded to valid JSON), or **Possibly …** (decoded to readable text, which can be a coincidence)
+- Every request gets a **Decode a value by hand** box: paste a value and pick Auto detect, a single step, or one of your rules
+- **Decoding rules** (⚙ → Manage decoding rules) handle a site's own scheme. A rule has a name, an optional URL pattern (`api.example.com/plans/*`, or empty for every site), and either a chain of steps or a JS function. Rules run before auto-detect, only on matching URLs. JS function rules with a URL pattern run automatically in the Decoded tab, in an isolated sandbox with no access to the page, tabs, or extension storage. The rule form has a live preview: paste a sample and see the result as you build the rule
+- Anything auto-detect finds has a **Save as rule** button that opens the rule form prefilled with the steps, the site and the sample
 
 ## AI access (MCP)
 
