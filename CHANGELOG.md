@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.5
 
 - Decoders are now **decoding rules**: each one can be limited to a URL pattern, and can be edited instead of only deleted. The rule form previews its result live on a pasted sample.
 - Auto-detect tries stacks of up to three encodings and keeps the one that decodes to JSON, instead of stopping at the first decoder that returns anything.
